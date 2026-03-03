@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+publish/
+*.user
+*.suo
+*.cache
+*.vs/
+.vs/
+
+## NativeAOT
+*.pdb
+
+## IDE
+.idea/
+*.sln.DotSettings.user
+
+## OS
+Thumbs.db
+Desktop.ini
+
+## Sisyphus
+.sisyphus/evidence/

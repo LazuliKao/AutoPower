@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AutoPower.Tests/AutoPower.Tests.csproj" />
+    <Project Path="src/AutoPower/AutoPower.csproj" />
+  </Folder>
+</Solution>
