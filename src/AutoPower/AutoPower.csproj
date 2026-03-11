@@ -9,10 +9,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishAot>true</PublishAot>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="AutoPower.Tests" />
+    <ProjectReference Include="..\AutoPower.Core\AutoPower.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Infrastructure\StartupManager.cs" />
+    <Compile Include="Infrastructure\Win32\Shell32.cs" />
+    <Compile Include="UI\SettingsWindow.cs" />
+    <Compile Include="UI\TrayIcon.cs" />
   </ItemGroup>
 
   <ItemGroup>

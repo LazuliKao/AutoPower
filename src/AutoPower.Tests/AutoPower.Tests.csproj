@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +20,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AutoPower\AutoPower.csproj" />
+    <ProjectReference Include="..\AutoPower.Core\AutoPower.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Core\ConfigSerializationTests.cs" />
+    <Compile Include="Core\ConfigServiceTests.cs" />
+    <Compile Include="Infrastructure\LoggerServiceTests.cs" />
+    <Compile Include="Strategy\StrategyEvaluatorTests.cs" />
   </ItemGroup>
 
 </Project>

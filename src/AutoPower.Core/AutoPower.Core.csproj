@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AutoPower" />
+    <InternalsVisibleTo Include="AutoPower.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Core\AppController.cs" />
+    <Compile Include="Core\ConfigService.cs" />
+    <Compile Include="Core\Models\*.cs" />
+    <Compile Include="Detection\IdleDetector.cs" />
+    <Compile Include="Detection\MonitorStateDetector.cs" />
+    <Compile Include="Power\PowerPlanManager.cs" />
+    <Compile Include="Strategy\StrategyEvaluator.cs" />
+    <Compile Include="Infrastructure\LoggerService.cs" />
+    <Compile Include="Infrastructure\Win32\Kernel32.cs" />
+    <Compile Include="Infrastructure\Win32\User32.cs" />
+    <Compile Include="Infrastructure\Win32\PowrProf.cs" />
+  </ItemGroup>
+
+</Project>
