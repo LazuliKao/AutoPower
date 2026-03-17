@@ -26,6 +26,8 @@ public static class PreviewEngine
         int hours = 24
     )
     {
+        from = from.ToUniversalTime();
+
         var entries = new List<TimelineEntry>();
         var until = from.AddHours(hours);
 
@@ -43,20 +45,23 @@ public static class PreviewEngine
         if (config.Override.IsActive && config.Override.PlanGuid.HasValue)
         {
             var overrideEnd = config.Override.ExpiresAt;
-            if (overrideEnd is null || overrideEnd > from)
+            if (overrideEnd is null || overrideEnd.Value > from)
             {
-                var effectiveEnd = overrideEnd.HasValue && overrideEnd.Value < until
-                    ? overrideEnd.Value
-                    : (DateTime?)null;
+                var effectiveEnd =
+                    overrideEnd.HasValue && overrideEnd.Value < until
+                        ? overrideEnd.Value
+                        : (DateTime?)null;
 
-                entries.Add(new TimelineEntry(
-                    from,
-                    ResolvePlanName(config.Override.PlanGuid.Value),
-                    config.Override.PlanGuid.Value,
-                    effectiveEnd.HasValue
-                        ? $"Override (until {effectiveEnd.Value.ToLocalTime():g})"
-                        : "Override (no expiry)"
-                ));
+                entries.Add(
+                    new TimelineEntry(
+                        from.ToLocalTime(),
+                        ResolvePlanName(config.Override.PlanGuid.Value),
+                        config.Override.PlanGuid.Value,
+                        effectiveEnd.HasValue
+                            ? $"Override (until {effectiveEnd.Value.ToLocalTime():g})"
+                            : "Override (no expiry)"
+                    )
+                );
 
                 // If override covers the entire window, return early
                 if (effectiveEnd is null || effectiveEnd >= until)
@@ -69,8 +74,8 @@ public static class PreviewEngine
 
         // Phase 2: Walk through time in 1-minute granularity collecting transitions
         // We track the "current" plan and emit an entry whenever it changes.
-        var enabledRules = config.Rules
-            .Where(r => r.IsEnabled)
+        var enabledRules = config
+            .Rules.Where(r => r.IsEnabled)
             .OrderByDescending(r => r.Priority)
             .ThenBy(r => r.CreatedAt)
             .ThenBy(r => r.Id.ToString())
@@ -80,20 +85,25 @@ public static class PreviewEngine
         string? lastSource = null;
 
         // Collect all rule boundary times within the window to minimize iterations
-        var checkPoints = CollectCheckPoints(enabledRules, from, until);
+        var fromLocal = from.ToLocalTime();
+        var untilLocal = until.ToLocalTime();
+        var checkPoints = CollectCheckPoints(enabledRules, fromLocal, untilLocal);
 
-        foreach (var checkpoint in checkPoints)
+        foreach (var checkpointLocal in checkPoints)
         {
-            var (planGuid, source) = EvaluateAt(config, enabledRules, plans, checkpoint, ResolvePlanName);
+            var (planGuid, source) = EvaluateAt(
+                config,
+                enabledRules,
+                plans,
+                checkpointLocal,
+                ResolvePlanName
+            );
 
             if (planGuid != lastPlanGuid || source != lastSource)
             {
-                entries.Add(new TimelineEntry(
-                    checkpoint,
-                    ResolvePlanName(planGuid),
-                    planGuid,
-                    source
-                ));
+                entries.Add(
+                    new TimelineEntry(checkpointLocal, ResolvePlanName(planGuid), planGuid, source)
+                );
                 lastPlanGuid = planGuid;
                 lastSource = source;
             }
@@ -107,7 +117,8 @@ public static class PreviewEngine
         List<StrategyRule> enabledRules,
         IReadOnlyList<PowerPlanInfo> plans,
         DateTime time,
-        Func<Guid, string> resolveName)
+        Func<Guid, string> resolveName
+    )
     {
         var currentTime = TimeOnly.FromDateTime(time);
         var dayOfWeek = time.DayOfWeek;
@@ -133,7 +144,8 @@ public static class PreviewEngine
     private static List<DateTime> CollectCheckPoints(
         List<StrategyRule> rules,
         DateTime from,
-        DateTime until)
+        DateTime until
+    )
     {
         var points = new SortedSet<DateTime> { from };
 

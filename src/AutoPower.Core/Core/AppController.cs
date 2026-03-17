@@ -124,7 +124,7 @@ internal sealed class AppController : IDisposable
         switch (Config.Mode)
         {
             case DetectionMode.KeyboardMouse:
-                _idleDetector = new(Config.IdleTimeoutMinutes);
+                _idleDetector = new(Config.IdleTimeoutMinutes * 60);
                 _idleDetector.IdleStateChanged += OnIdleStateChanged;
                 _idleDetector.Start();
                 break;
@@ -136,7 +136,7 @@ internal sealed class AppController : IDisposable
                 break;
 
             case DetectionMode.Both:
-                _idleDetector = new(Config.IdleTimeoutMinutes);
+                _idleDetector = new(Config.IdleTimeoutMinutes * 60);
                 _idleDetector.IdleStateChanged += OnIdleStateChanged;
                 _idleDetector.Start();
 

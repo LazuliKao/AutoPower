@@ -12,9 +12,9 @@ internal sealed class IdleDetector : IDisposable
 
     public event Action<bool>? IdleStateChanged;
 
-    public IdleDetector(int idleTimeoutMinutes)
+    public IdleDetector(int idleTimeoutSeconds)
     {
-        _idleTimeoutMs = (ulong)idleTimeoutMinutes * 60 * 1000;
+        _idleTimeoutMs = (ulong)idleTimeoutSeconds * 1000;
         _timer = new(OnTimerTick, null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -27,8 +27,8 @@ internal sealed class IdleDetector : IDisposable
 
         if (!User32.GetLastInputInfo(ref lastInputInfo))
             return;
-
         var idleTime = Kernel32.GetTickCount64() - lastInputInfo.dwTime;
+
         var isCurrentlyIdle = idleTime >= _idleTimeoutMs;
 
         if (isCurrentlyIdle != _isIdle)
