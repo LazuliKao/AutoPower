@@ -1,5 +1,4 @@
 using AutoPower.Core.Core.Models;
-using AutoPower.Core.Models;
 using AutoPower.Core.Strategy;
 
 namespace AutoPower.Tests.Strategy;

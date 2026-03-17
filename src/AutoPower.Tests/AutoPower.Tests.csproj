@@ -27,6 +27,7 @@
     <Compile Include="Core\ConfigSerializationTests.cs" />
     <Compile Include="Core\ConfigServiceTests.cs" />
     <Compile Include="Infrastructure\LoggerServiceTests.cs" />
+    <Compile Include="Power\PowerPlanManagerTests.cs" />
     <Compile Include="Strategy\StrategyEvaluatorTests.cs" />
   </ItemGroup>
 
