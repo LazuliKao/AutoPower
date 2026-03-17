@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using AutoPower.Core.Core.Models;
+using AutoPower.Core.Strategy;
 
 namespace AutoPower.UI;
 
@@ -68,6 +69,7 @@ internal sealed class SettingsWindow
             new TabItem().Header("General").Content(CreateGeneralTabContent()),
             new TabItem().Header("Schedule").Content(CreateScheduleTabContent()),
             new TabItem().Header("Override").Content(CreateOverrideTabContent()),
+            new TabItem().Header("Preview").Content(CreatePreviewTabContent()),
             new TabItem().Header("About").Content(CreateAboutTabContent())
         );
 
@@ -589,6 +591,163 @@ internal sealed class SettingsWindow
         _overrideStatusLabel?.Foreground(TextMuted);
         OnConfigSaved?.Invoke(_config);
         OnNotificationRequested?.Invoke("Override Cleared", "Resumed automatic plan management.");
+    }
+
+    #endregion
+
+    #region Preview Tab
+
+    private Element CreatePreviewTabContent()
+    {
+        var timeline = PreviewEngine.GenerateTimeline(_config, _plans, DateTime.Now, hours: 24);
+
+        var rows = new List<Element>();
+
+        if (timeline.Count == 0)
+        {
+            rows.Add(
+                new Border()
+                    .Background(SurfaceCard)
+                    .BorderBrush(BorderColor)
+                    .BorderThickness(1)
+                    .CornerRadius(8)
+                    .Padding(14)
+                    .Child(
+                        new Label()
+                            .Text("No upcoming plan transitions in the next 24 hours.")
+                            .FontFamily("Consolas")
+                            .Foreground(TextMuted)
+                    )
+            );
+        }
+        else
+        {
+            for (var i = 0; i < timeline.Count; i++)
+            {
+                var entry = timeline[i];
+                var isFirst = i == 0;
+
+                // Determine duration until next transition
+                string durationText;
+                if (i + 1 < timeline.Count)
+                {
+                    var span = timeline[i + 1].Time - entry.Time;
+                    durationText = FormatDuration(span);
+                }
+                else
+                {
+                    durationText = "until end of preview";
+                }
+
+                var timeText = entry.Time.ToString("ddd HH:mm");
+
+                var dot = new Border()
+                    .Width(10)
+                    .Height(10)
+                    .CornerRadius(5)
+                    .Background(isFirst ? AccentColor : TextMuted);
+
+                var line = i < timeline.Count - 1
+                    ? (Element)new Border().Width(2).Height(24).Background(BorderColor).Margin(4, 0, 0, 0)
+                    : new Border().Width(0).Height(0);
+
+                var timeLabel = new Label()
+                    .Text(timeText)
+                    .FontFamily("Consolas")
+                    .FontSize(12)
+                    .Foreground(isFirst ? AccentColor : TextPrimary)
+                    .MinWidth(100);
+
+                var planLabel = new Label()
+                    .Text(entry.PlanName)
+                    .FontFamily("Bahnschrift")
+                    .FontSize(13)
+                    .SemiBold()
+                    .Foreground(TextPrimary);
+
+                var sourceLabel = new Label()
+                    .Text(entry.Source)
+                    .FontFamily("Consolas")
+                    .FontSize(10)
+                    .Foreground(TextMuted);
+
+                var durationLabel = new Label()
+                    .Text(durationText)
+                    .FontFamily("Consolas")
+                    .FontSize(10)
+                    .Foreground(TextMuted);
+
+                var infoBlock = new StackPanel()
+                    .Vertical()
+                    .Spacing(2)
+                    .Children(planLabel, sourceLabel, durationLabel);
+
+                var entryRow = new StackPanel()
+                    .Horizontal()
+                    .Spacing(12)
+                    .Children(timeLabel, dot, infoBlock);
+
+                var entryWithConnector = new StackPanel()
+                    .Vertical()
+                    .Spacing(0)
+                    .Children(
+                        new Border()
+                            .Background(SurfaceCard)
+                            .BorderBrush(BorderColor)
+                            .BorderThickness(1)
+                            .CornerRadius(8)
+                            .Padding(10)
+                            .Child(entryRow),
+                        new StackPanel()
+                            .Horizontal()
+                            .Children(
+                                new Border().Width(100),
+                                line
+                            )
+                    );
+
+                rows.Add(entryWithConnector);
+            }
+        }
+
+        var timelinePanel = new StackPanel().Vertical().Spacing(0).Children(rows.ToArray());
+
+        return new StackPanel()
+            .Vertical()
+            .Spacing(12)
+            .Padding(8)
+            .Children(
+                CreateSectionCard(
+                    "Timeline Preview",
+                    "Upcoming power plan transitions for the next 24 hours based on current configuration.",
+                    new ScrollViewer()
+                        .Height(420)
+                        .VerticalScroll(ScrollMode.Auto)
+                        .HorizontalScroll(ScrollMode.Disabled)
+                        .Background(SurfaceInput)
+                        .BorderBrush(BorderColor)
+                        .BorderThickness(1)
+                        .Padding(10)
+                        .Content(timelinePanel)
+                )
+            );
+    }
+
+    private static string FormatDuration(TimeSpan span)
+    {
+        if (span.TotalMinutes < 1)
+            return "< 1 min";
+        if (span.TotalHours < 1)
+            return $"{(int)span.TotalMinutes} min";
+        if (span.TotalHours < 24)
+        {
+            var h = (int)span.TotalHours;
+            var m = span.Minutes;
+            return m > 0 ? $"{h}h {m}m" : $"{h}h";
+        }
+        var d = (int)span.TotalDays;
+        var hr = span.Hours;
+        return hr > 0 ? $"{d}d {hr}h" : $"{d}d";
     }
 
     #endregion

@@ -21,6 +21,7 @@
     <Compile Include="Detection\MonitorStateDetector.cs" />
     <Compile Include="Power\PowerPlanManager.cs" />
     <Compile Include="Strategy\StrategyEvaluator.cs" />
+    <Compile Include="Strategy\PreviewEngine.cs" />
     <Compile Include="Infrastructure\LoggerService.cs" />
     <Compile Include="Infrastructure\Win32\Kernel32.cs" />
     <Compile Include="Infrastructure\Win32\User32.cs" />
