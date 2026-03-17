@@ -182,4 +182,16 @@ internal static partial class User32
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
+
+    public const uint MB_OK = 0x00000000;
+    public const uint MB_ICONWARNING = 0x00000030;
+    public const uint MB_ICONINFORMATION = 0x00000040;
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int MessageBoxW(
+        IntPtr hWnd,
+        string lpText,
+        string lpCaption,
+        uint uType
+    );
 }

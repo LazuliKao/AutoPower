@@ -32,8 +32,17 @@ internal static class AdminElevationManager
             return;
         }
 
-        LoggerService.Info("Not running as administrator. Requesting elevation...");
-        
+        LoggerService.Info("Not running as administrator. Showing elevation prompt...");
+
+        User32.MessageBoxW(
+            IntPtr.Zero,
+            "AutoPower requires administrator privileges to manage Windows power plans.\n\nYou will be prompted by Windows to allow elevated access.",
+            "Administrator Privileges Required",
+            User32.MB_OK | User32.MB_ICONINFORMATION
+        );
+
+        LoggerService.Info("Requesting elevation via ShellExecute...");
+
         try
         {
             var exePath = Process.GetCurrentProcess().MainModule?.FileName;
