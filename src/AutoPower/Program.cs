@@ -1,16 +1,16 @@
 using System.Runtime.Versioning;
-using AutoPower.Core;
 using AutoPower.Core.Core;
 using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Power;
-using AutoPower.Infrastructure;
-using AutoPower.Infrastructure.Win32;
 using AutoPower.UI;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
 [assembly: SupportedOSPlatform("windows")]
 
+
+#if !DEBUG
 AdminElevationManager.RequestElevationIfNeeded();
+#endif
 
 var mutex = Kernel32.CreateMutexW(IntPtr.Zero, false, "AutoPower_SingleInstance");
 if (mutex != IntPtr.Zero && Kernel32.GetLastError() == Kernel32.ERROR_ALREADY_EXISTS)

@@ -17,7 +17,7 @@ internal static class ConfigService
     {
         if (!File.Exists(ConfigFilePath))
             return new();
-
+        LoggerService.Info($"Loading config from {ConfigFilePath}");
         try
         {
             var json = File.ReadAllText(ConfigFilePath);

@@ -4,15 +4,10 @@ namespace AutoPower.Tests.Infrastructure;
 
 public class LoggerServiceTests : IDisposable
 {
-    private readonly string _testLogDirectory;
-
-    public LoggerServiceTests()
-    {
-        _testLogDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"AutoPowerLogTest_{Guid.NewGuid():N}"
-        );
-    }
+    private readonly string _testLogDirectory = Path.Combine(
+        Path.GetTempPath(),
+        $"AutoPowerLogTest_{Guid.NewGuid():N}"
+    );
 
     [Fact]
     public void Info_WritesToDailyLogFile()

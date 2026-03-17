@@ -19,6 +19,7 @@ internal sealed class SettingsWindow
     private static readonly Color DangerColor = Color.FromHex("#D85A76");
 
     private Window? _window;
+    private bool _isOpen;
     private AppConfig _config = null!;
     private List<PowerPlanInfo> _plans = null!;
 
@@ -40,11 +41,19 @@ internal sealed class SettingsWindow
     private ComboBox? _overridePlanComboBox;
     private TextBox? _overrideTtlTextBox;
 
+    private ScrollViewer? _previewScrollViewer;
+
     internal event Action<string, string>? OnNotificationRequested;
     internal event Action<AppConfig>? OnConfigSaved;
 
     internal void Show(AppConfig config, List<PowerPlanInfo> plans)
     {
+        if (_isOpen && _window != null)
+        {
+            _window.Activate();
+            return;
+        }
+
         _config = config;
         _plans = plans;
         _rules = new(config.Rules);
@@ -54,6 +63,10 @@ internal sealed class SettingsWindow
             .Title("AutoPower Settings")
             .Resizable(600, 660)
             .Content(CreateContent());
+
+        _window.Closed += () => _isOpen = false;
+        _isOpen = true;
+
         Application
             .Create()
             .UseAccent(Accent.Pink)
@@ -570,11 +583,18 @@ internal sealed class SettingsWindow
                 );
                 _overrideStatusLabel?.Foreground(AccentColor);
                 OnConfigSaved?.Invoke(_config);
-                OnNotificationRequested?.Invoke("Override Active", $"Forced '{selectedPlan.Name}' for {ttlMinutes} minutes");
+                OnNotificationRequested?.Invoke(
+                    "Override Active",
+                    $"Forced '{selectedPlan.Name}' for {ttlMinutes} minutes"
+                );
+                RefreshPreviewTab();
             }
             else
             {
-                OnNotificationRequested?.Invoke("Failed to Set Override", "Invalid duration entered.");
+                OnNotificationRequested?.Invoke(
+                    "Failed to Set Override",
+                    "Invalid duration entered."
+                );
             }
         }
         else
@@ -591,6 +611,7 @@ internal sealed class SettingsWindow
         _overrideStatusLabel?.Foreground(TextMuted);
         OnConfigSaved?.Invoke(_config);
         OnNotificationRequested?.Invoke("Override Cleared", "Resumed automatic plan management.");
+        RefreshPreviewTab();
     }
 
     #endregion
@@ -598,6 +619,31 @@ internal sealed class SettingsWindow
     #region Preview Tab
 
     private Element CreatePreviewTabContent()
+    {
+        _previewScrollViewer = new ScrollViewer()
+            .Height(420)
+            .VerticalScroll(ScrollMode.Auto)
+            .HorizontalScroll(ScrollMode.Disabled)
+            .Background(SurfaceInput)
+            .BorderBrush(BorderColor)
+            .BorderThickness(1)
+            .Padding(10)
+            .Content(BuildTimelinePanel());
+
+        return new StackPanel()
+            .Vertical()
+            .Spacing(12)
+            .Padding(8)
+            .Children(
+                CreateSectionCard(
+                    "Timeline Preview",
+                    "Upcoming power plan transitions for the next 24 hours based on current configuration.",
+                    _previewScrollViewer
+                )
+            );
+    }
+
+    private Element BuildTimelinePanel()
     {
         var timeline = PreviewEngine.GenerateTimeline(_config, _plans, DateTime.Now, hours: 24);
 
@@ -647,9 +693,15 @@ internal sealed class SettingsWindow
                     .CornerRadius(5)
                     .Background(isFirst ? AccentColor : TextMuted);
 
-                var line = i < timeline.Count - 1
-                    ? (Element)new Border().Width(2).Height(24).Background(BorderColor).Margin(4, 0, 0, 0)
-                    : new Border().Width(0).Height(0);
+                var line =
+                    i < timeline.Count - 1
+                        ? (Element)
+                            new Border()
+                                .Width(2)
+                                .Height(24)
+                                .Background(BorderColor)
+                                .Margin(4, 0, 0, 0)
+                        : new Border().Width(0).Height(0);
 
                 var timeLabel = new Label()
                     .Text(timeText)
@@ -698,39 +750,22 @@ internal sealed class SettingsWindow
                             .CornerRadius(8)
                             .Padding(10)
                             .Child(entryRow),
-                        new StackPanel()
-                            .Horizontal()
-                            .Children(
-                                new Border().Width(100),
-                                line
-                            )
+                        new StackPanel().Horizontal().Children(new Border().Width(100), line)
                     );
 
                 rows.Add(entryWithConnector);
             }
         }
 
-        var timelinePanel = new StackPanel().Vertical().Spacing(0).Children(rows.ToArray());
+        return new StackPanel().Vertical().Spacing(0).Children(rows.ToArray());
+    }
 
-        return new StackPanel()
-            .Vertical()
-            .Spacing(12)
-            .Padding(8)
-            .Children(
-                CreateSectionCard(
-                    "Timeline Preview",
-                    "Upcoming power plan transitions for the next 24 hours based on current configuration.",
-                    new ScrollViewer()
-                        .Height(420)
-                        .VerticalScroll(ScrollMode.Auto)
-                        .HorizontalScroll(ScrollMode.Disabled)
-                        .Background(SurfaceInput)
-                        .BorderBrush(BorderColor)
-                        .BorderThickness(1)
-                        .Padding(10)
-                        .Content(timelinePanel)
-                )
-            );
+    private void RefreshPreviewTab()
+    {
+        if (_previewScrollViewer is null)
+            return;
+
+        _previewScrollViewer.Content = BuildTimelinePanel();
     }
 
     private static string FormatDuration(TimeSpan span)
