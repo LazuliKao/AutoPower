@@ -39,6 +39,7 @@ internal sealed class SettingsWindow
     private ComboBox? _overridePlanComboBox;
     private TextBox? _overrideTtlTextBox;
 
+    internal event Action<string, string>? OnNotificationRequested;
     internal event Action<AppConfig>? OnConfigSaved;
 
     internal void Show(AppConfig config, List<PowerPlanInfo> plans)
@@ -567,7 +568,16 @@ internal sealed class SettingsWindow
                 );
                 _overrideStatusLabel?.Foreground(AccentColor);
                 OnConfigSaved?.Invoke(_config);
+                OnNotificationRequested?.Invoke("Override Active", $"Forced '{selectedPlan.Name}' for {ttlMinutes} minutes");
             }
+            else
+            {
+                OnNotificationRequested?.Invoke("Failed to Set Override", "Invalid duration entered.");
+            }
+        }
+        else
+        {
+            OnNotificationRequested?.Invoke("Failed to Set Override", "No plan selected.");
         }
     }
 
@@ -578,6 +588,7 @@ internal sealed class SettingsWindow
         _overrideStatusLabel?.Text("No Override Active");
         _overrideStatusLabel?.Foreground(TextMuted);
         OnConfigSaved?.Invoke(_config);
+        OnNotificationRequested?.Invoke("Override Cleared", "Resumed automatic plan management.");
     }
 
     #endregion

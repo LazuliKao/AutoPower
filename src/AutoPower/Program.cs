@@ -30,6 +30,10 @@ try
             ConfigService.Save(config);
             controller.ReloadConfig();
         };
+        w.OnNotificationRequested += (title, message) =>
+        {
+            tray.ShowBalloon(title, message);
+        };
 
         return w;
     });
