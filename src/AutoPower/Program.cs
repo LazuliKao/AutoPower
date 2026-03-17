@@ -10,6 +10,8 @@ using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
 [assembly: SupportedOSPlatform("windows")]
 
+AdminElevationManager.RequestElevationIfNeeded();
+
 var mutex = Kernel32.CreateMutexW(IntPtr.Zero, false, "AutoPower_SingleInstance");
 if (mutex != IntPtr.Zero && Kernel32.GetLastError() == Kernel32.ERROR_ALREADY_EXISTS)
 {

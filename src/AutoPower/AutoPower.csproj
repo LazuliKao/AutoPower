@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Infrastructure\AdminElevationManager.cs" />
     <Compile Include="Infrastructure\StartupManager.cs" />
     <Compile Include="Infrastructure\Win32\Shell32.cs" />
     <Compile Include="UI\SettingsWindow.cs" />
