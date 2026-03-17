@@ -1,10 +1,10 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using AutoPower.Core.Models;
-using AutoPower.Infrastructure.Win32;
+using AutoPower.Core.Core.Models;
+using AutoPower.Core.Infrastructure.Win32;
 
-namespace AutoPower.Power;
+namespace AutoPower.Core.Power;
 
 internal static class PowerPlanManager
 {
@@ -72,21 +72,40 @@ internal static class PowerPlanManager
 
     private static string GetPlanName(Guid schemeGuid)
     {
-        var buffer = new byte[512];
-        var bufferSize = (uint)buffer.Length;
-
+        // First call with zero-sized buffer to determine required size (in bytes)
+        var bufferSize = 0u;
         var result = PowrProf.PowerReadFriendlyName(
             IntPtr.Zero,
             ref schemeGuid,
             IntPtr.Zero,
             IntPtr.Zero,
-            buffer,
+            Array.Empty<byte>(),
             ref bufferSize
         );
 
-        if (result != PowrProf.ERROR_SUCCESS || bufferSize == 0)
+        if (result == PowrProf.ERROR_NO_MORE_ITEMS || bufferSize == 0)
             return string.Empty;
 
-        return Encoding.Unicode.GetString(buffer, 0, (int)bufferSize).TrimEnd('\0');
+        // If the API indicates more data is required or returned size > 0, allocate buffer
+        if (result == PowrProf.ERROR_MORE_DATA || bufferSize > 0)
+        {
+            var buffer = new byte[bufferSize];
+            var secondCallSize = bufferSize;
+            var secondResult = PowrProf.PowerReadFriendlyName(
+                IntPtr.Zero,
+                ref schemeGuid,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                buffer,
+                ref secondCallSize
+            );
+
+            if (secondResult != PowrProf.ERROR_SUCCESS || secondCallSize == 0)
+                return string.Empty;
+
+            return Encoding.Unicode.GetString(buffer, 0, (int)secondCallSize).TrimEnd('\0');
+        }
+
+        return string.Empty;
     }
 }

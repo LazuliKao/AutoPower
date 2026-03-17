@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AutoPower.Infrastructure;
+namespace AutoPower.Core.Infrastructure;
 
 internal static class LoggerService
 {

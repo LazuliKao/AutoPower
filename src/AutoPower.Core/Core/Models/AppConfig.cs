@@ -1,4 +1,5 @@
-namespace AutoPower.Core.Models;
+namespace AutoPower.Core.Core.Models;
+
 public sealed record AppConfig
 {
     public int SchemaVersion { get; init; } = 1;

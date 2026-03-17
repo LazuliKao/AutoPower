@@ -1,4 +1,5 @@
-namespace AutoPower.Core.Models;
+namespace AutoPower.Core.Core.Models;
+
 public sealed record OverrideState
 {
     public bool IsActive { get; init; }

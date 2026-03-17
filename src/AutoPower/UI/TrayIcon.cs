@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using AutoPower.Core.Models;
+using AutoPower.Core.Core.Models;
+using AutoPower.Core.Infrastructure.Win32;
 using AutoPower.Infrastructure.Win32;
+using User32 = AutoPower.Core.Infrastructure.Win32.User32;
 
 namespace AutoPower.UI;
 

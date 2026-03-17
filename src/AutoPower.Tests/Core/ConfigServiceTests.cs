@@ -1,4 +1,6 @@
 using AutoPower.Core;
+using AutoPower.Core.Core;
+using AutoPower.Core.Core.Models;
 using AutoPower.Core.Models;
 
 namespace AutoPower.Tests.Core;

@@ -1,10 +1,10 @@
-using AutoPower.Core.Models;
-using AutoPower.Detection;
-using AutoPower.Infrastructure;
-using AutoPower.Power;
-using AutoPower.Strategy;
+using AutoPower.Core.Core.Models;
+using AutoPower.Core.Detection;
+using AutoPower.Core.Infrastructure;
+using AutoPower.Core.Power;
+using AutoPower.Core.Strategy;
 
-namespace AutoPower.Core;
+namespace AutoPower.Core.Core;
 
 internal sealed class AppController : IDisposable
 {

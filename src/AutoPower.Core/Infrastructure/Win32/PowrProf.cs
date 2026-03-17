@@ -1,11 +1,13 @@
 using System.Runtime.InteropServices;
 
-namespace AutoPower.Infrastructure.Win32;
+namespace AutoPower.Core.Infrastructure.Win32;
 
 internal static partial class PowrProf
 {
     public const uint ACCESS_SCHEME = 16;
     public const uint ERROR_SUCCESS = 0;
+    // ERROR_MORE_DATA indicates the provided buffer was too small; value = 234
+    public const uint ERROR_MORE_DATA = 234;
     public const uint ERROR_NO_MORE_ITEMS = 259;
 
     public static readonly Guid GUID_HIGH_PERFORMANCE = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");

@@ -1,6 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
-using AutoPower.Core.Models;
+using AutoPower.Core.Core.Models;
 
 namespace AutoPower.UI;
 
@@ -50,14 +50,14 @@ internal sealed class SettingsWindow
         _window = new Window()
             .Padding(0)
             .Title("AutoPower Settings")
-            .Size(600, 660)
+            .Resizable(600, 660)
             .Content(CreateContent());
         Application
             .Create()
-            .UseWin32()
-            .UseDirect2D()
             .UseAccent(Accent.Pink)
-            .UseTheme(ThemeVariant.System)
+            .UseTheme(ThemeVariant.Dark)
+            .UseWin32()
+            .UseMewVGWin32()
             .Run(_window);
     }
 

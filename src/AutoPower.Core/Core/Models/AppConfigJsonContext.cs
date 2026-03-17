@@ -1,9 +1,11 @@
 using System.Text.Json.Serialization;
-namespace AutoPower.Core.Models;
+
+namespace AutoPower.Core.Core.Models;
 
 [JsonSerializable(typeof(AppConfig))]
 [JsonSourceGenerationOptions(
     WriteIndented = true,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+)]
 public partial class AppConfigJsonContext : JsonSerializerContext { }

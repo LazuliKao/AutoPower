@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace AutoPower.Infrastructure.Win32;
+namespace AutoPower.Core.Infrastructure.Win32;
 
 [StructLayout(LayoutKind.Sequential)]
 internal struct LASTINPUTINFO

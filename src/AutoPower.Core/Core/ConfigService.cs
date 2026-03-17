@@ -1,7 +1,8 @@
 using System.Text.Json;
-using AutoPower.Core.Models;
+using AutoPower.Core.Core.Models;
+using AutoPower.Core.Infrastructure;
 
-namespace AutoPower.Core;
+namespace AutoPower.Core.Core;
 
 internal static class ConfigService
 {
@@ -25,9 +26,7 @@ internal static class ConfigService
         }
         catch (Exception ex) when (ex is JsonException or IOException)
         {
-            Infrastructure.LoggerService.Warn(
-                $"Failed to load config, using defaults: {ex.Message}"
-            );
+            LoggerService.Warn($"Failed to load config, using defaults: {ex.Message}");
             return new();
         }
     }

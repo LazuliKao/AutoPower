@@ -1,2 +1,8 @@
-namespace AutoPower.Core.Models;
-public enum AppState { Active, Idle, ManualOverride }
+namespace AutoPower.Core.Core.Models;
+
+public enum AppState
+{
+    Active,
+    Idle,
+    ManualOverride,
+}

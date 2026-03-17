@@ -1,9 +1,12 @@
 using System.Runtime.Versioning;
 using AutoPower.Core;
+using AutoPower.Core.Core;
+using AutoPower.Core.Infrastructure;
+using AutoPower.Core.Power;
 using AutoPower.Infrastructure;
 using AutoPower.Infrastructure.Win32;
-using AutoPower.Power;
 using AutoPower.UI;
+using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
 [assembly: SupportedOSPlatform("windows")]
 
@@ -19,19 +22,23 @@ try
 {
     using var controller = new AppController();
     using var tray = new TrayIcon();
-    var settingsWindow = new SettingsWindow();
+    var settingsWindow = new Lazy<SettingsWindow>(() =>
+    {
+        var w = new SettingsWindow();
+        w.OnConfigSaved += config =>
+        {
+            ConfigService.Save(config);
+            controller.ReloadConfig();
+        };
+
+        return w;
+    });
     var exitSignal = new ManualResetEventSlim(false);
 
     tray.OnOpenSettings += () =>
-        settingsWindow.Show(controller.Config, PowerPlanManager.EnumeratePlans());
+        settingsWindow.Value.Show(controller.Config, PowerPlanManager.EnumeratePlans());
     tray.OnExit += () => exitSignal.Set();
     tray.OnClearOverride += () => controller.ClearManualOverride();
-
-    settingsWindow.OnConfigSaved += config =>
-    {
-        ConfigService.Save(config);
-        controller.ReloadConfig();
-    };
 
     controller.StateChanged += state =>
     {

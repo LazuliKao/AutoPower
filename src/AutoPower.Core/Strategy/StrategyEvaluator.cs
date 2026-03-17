@@ -1,6 +1,6 @@
-using AutoPower.Core.Models;
+using AutoPower.Core.Core.Models;
 
-namespace AutoPower.Strategy;
+namespace AutoPower.Core.Strategy;
 
 internal static class StrategyEvaluator
 {
@@ -21,14 +21,14 @@ internal static class StrategyEvaluator
         return matches.Count > 0 ? matches[0] : null;
     }
 
-    private static bool MatchesDayType(Core.Models.DayType dayType, DayOfWeek dayOfWeek)
+    private static bool MatchesDayType(DayType dayType, DayOfWeek dayOfWeek)
     {
         return dayType switch
         {
-            Core.Models.DayType.All => true,
-            Core.Models.DayType.Weekday => dayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
-            Core.Models.DayType.Weekend => dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
-            _ => false
+            DayType.All => true,
+            DayType.Weekday => dayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
+            DayType.Weekend => dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
+            _ => false,
         };
     }
 

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using AutoPower.Infrastructure.Win32;
+using AutoPower.Core.Infrastructure.Win32;
 
-namespace AutoPower.Detection;
+namespace AutoPower.Core.Detection;
 
 internal sealed class MonitorStateDetector : IDisposable
 {

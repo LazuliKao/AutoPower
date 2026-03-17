@@ -1,2 +1,8 @@
-namespace AutoPower.Core.Models;
-public enum DayType { All, Weekday, Weekend }
+namespace AutoPower.Core.Core.Models;
+
+public enum DayType
+{
+    All,
+    Weekday,
+    Weekend,
+}
