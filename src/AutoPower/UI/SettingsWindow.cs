@@ -132,7 +132,35 @@ internal sealed class SettingsWindow
                 .DockTop()
         );
 
-        return new Border().Background(WindowBackground).Child(shell);
+        return DelayLoadingContent(() => new Border().Background(WindowBackground).Child(shell));
+    }
+
+    private UIElement DelayLoadingContent(Func<UIElement> createContent)
+    {
+        var placeholder = new Border()
+            .Child(
+                new TextBlock()
+                {
+                    Text = "Loading...",
+                    FontSize = 40,
+                    VerticalTextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                }
+            )
+            .WithTheme(
+                (theme, self) =>
+                {
+                    self.Foreground = theme.Palette.Accent;
+                }
+            );
+        Task.Delay(100)
+            .ContinueWith(_ =>
+            {
+                placeholder.Child = createContent();
+                ;
+            })
+            .ConfigureAwait(false);
+        return placeholder;
     }
 
     #region General Tab
