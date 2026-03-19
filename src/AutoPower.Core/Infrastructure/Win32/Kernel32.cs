@@ -22,7 +22,4 @@ internal static partial class Kernel32
         string lpName
     );
 
-    [LibraryImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsUserAnAdmin();
 }

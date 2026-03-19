@@ -15,7 +15,7 @@ internal static class AdminElevationManager
     {
         try
         {
-            return Kernel32.IsUserAnAdmin();
+            return Shell32.IsUserAnAdmin();
         }
         catch (Exception ex)
         {

@@ -42,6 +42,10 @@ internal static partial class Shell32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATA lpData);
 
+    [LibraryImport("shell32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsUserAnAdmin();
+
     [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial IntPtr ShellExecuteW(
         IntPtr hwnd,
