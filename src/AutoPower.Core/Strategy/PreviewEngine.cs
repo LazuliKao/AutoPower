@@ -99,12 +99,7 @@ public static class PreviewEngine
 
     private static StrategyEvaluationContext CreateSnapshot(AppConfig config, DateTime now)
     {
-        return new()
-        {
-            Now = now,
-            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
-            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
-        };
+        return StrategyEvaluator.BuildPreviewSnapshot(config, now);
     }
 
     private static List<DateTime> CollectCheckPoints(

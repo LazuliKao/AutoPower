@@ -242,7 +242,13 @@ internal sealed class AppController : IDisposable
                 }
                 else
                 {
-                    var decision = StrategyEvaluator.Resolve(Config, BuildEvaluationContext(DateTime.Now));
+                    var context = StrategyEvaluator.BuildLiveContext(
+                        Config,
+                        DateTime.Now,
+                        _isKeyboardMouseIdle,
+                        _isMonitorOff
+                    );
+                    var decision = StrategyEvaluator.Resolve(Config, context);
                     targetPlanGuid = decision.PlanGuid;
                     newState = decision.State;
                     source = decision.Source;
@@ -250,7 +256,13 @@ internal sealed class AppController : IDisposable
             }
             else
             {
-                var decision = StrategyEvaluator.Resolve(Config, BuildEvaluationContext(DateTime.Now));
+                var context = StrategyEvaluator.BuildLiveContext(
+                    Config,
+                    DateTime.Now,
+                    _isKeyboardMouseIdle,
+                    _isMonitorOff
+                );
+                var decision = StrategyEvaluator.Resolve(Config, context);
                 targetPlanGuid = decision.PlanGuid;
                 newState = decision.State;
                 source = decision.Source;
@@ -281,14 +293,7 @@ internal sealed class AppController : IDisposable
 
     private StrategyEvaluationContext BuildEvaluationContext(DateTime now)
     {
-        return new()
-        {
-            Now = now,
-            IsKeyboardMouseDetectionEnabled = Config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
-            IsMonitorDetectionEnabled = Config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
-            IsKeyboardMouseIdle = _isKeyboardMouseIdle,
-            IsMonitorOff = _isMonitorOff,
-        };
+        return StrategyEvaluator.BuildLiveContext(Config, now, _isKeyboardMouseIdle, _isMonitorOff);
     }
 
     public void Dispose()

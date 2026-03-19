@@ -4,6 +4,33 @@ namespace AutoPower.Core.Strategy;
 
 internal static class StrategyEvaluator
 {
+    internal static StrategyEvaluationContext BuildLiveContext(
+        AppConfig config,
+        DateTime now,
+        bool? isKeyboardMouseIdle,
+        bool? isMonitorOff
+    )
+    {
+        return new()
+        {
+            Now = now,
+            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+            IsKeyboardMouseIdle = isKeyboardMouseIdle,
+            IsMonitorOff = isMonitorOff,
+        };
+    }
+
+    internal static StrategyEvaluationContext BuildPreviewSnapshot(AppConfig config, DateTime now)
+    {
+        return new()
+        {
+            Now = now,
+            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+        };
+    }
+
     private enum ConditionMatchResult
     {
         False,
