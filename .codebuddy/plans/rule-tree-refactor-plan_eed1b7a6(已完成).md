@@ -4,25 +4,25 @@ overview: 为 AutoPower 的策略系统制定一份以实施为导向的重构�
 todos:
   - id: freeze-rule-contract
     content: 使用 [subagent:code-explorer] 固化规则树语义与兼容边界
-    status: in_progress
+    status: completed
   - id: refactor-config-model
     content: 重构 StrategyRule、AppConfig、ConfigService 与 JsonContext
-    status: pending
+    status: completed
     dependencies:
       - freeze-rule-contract
   - id: unify-decision-flow
     content: 统一 StrategyEvaluator、AppController、PreviewEngine 决策链路
-    status: pending
+    status: completed
     dependencies:
       - refactor-config-model
   - id: upgrade-settings-window
     content: 改造 SettingsWindow 支持条件组与默认项编辑
-    status: pending
+    status: completed
     dependencies:
       - unify-decision-flow
   - id: verify-regression
     content: 使用 [subagent:code-explorer] 补齐测试、README 与回归验证
-    status: pending
+    status: completed
     dependencies:
       - unify-decision-flow
       - upgrade-settings-window
