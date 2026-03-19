@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using AutoPower.Core.Core;
 using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Power;
+using AutoPower.Infrastructure;
 using AutoPower.UI;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
