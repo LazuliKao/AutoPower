@@ -4,6 +4,7 @@ using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Power;
 using AutoPower.UI;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
+using User32 = AutoPower.Core.Infrastructure.Win32.User32;
 
 [assembly: SupportedOSPlatform("windows")]
 
@@ -20,6 +21,8 @@ if (mutex != IntPtr.Zero && Kernel32.GetLastError() == Kernel32.ERROR_ALREADY_EX
 {
     try
     {
+        User32.AllowSetForegroundWindow(User32.ASFW_ANY);
+
         using var openSettingsEvent = EventWaitHandle.OpenExisting(OpenSettingsEventName);
         openSettingsEvent.Set();
     }

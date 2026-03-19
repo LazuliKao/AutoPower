@@ -202,6 +202,7 @@ internal sealed class TrayIcon : IDisposable
                 break;
 
             case MsgOpenSettingsRequest:
+                User32.SetForegroundWindow(_windowHandle);
                 OnOpenSettings?.Invoke();
                 break;
 
