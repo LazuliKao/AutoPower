@@ -2,7 +2,6 @@ using System.Runtime.Versioning;
 using AutoPower.Core.Core;
 using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Power;
-using AutoPower.Infrastructure;
 using AutoPower.UI;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
@@ -10,7 +9,7 @@ using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 
 
 #if !DEBUG
-AdminElevationManager.RequestElevationIfNeeded();
+AutoPower.Infrastructure.AdminElevationManager.RequestElevationIfNeeded();
 #endif
 
 var mutex = Kernel32.CreateMutexW(IntPtr.Zero, false, "AutoPower_SingleInstance");
