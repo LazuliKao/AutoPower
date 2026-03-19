@@ -1,4 +1,5 @@
 using AutoPower.Core.Core.Models;
+using AutoPower.Core.Core;
 using AutoPower.Core.Strategy;
 
 namespace AutoPower.Tests.Strategy;
@@ -338,5 +339,201 @@ public class StrategyEvaluatorTests
 
         Assert.Equal(IdlePlanGuid, result.PlanGuid);
         Assert.Equal(AppState.Idle, result.State);
+    }
+
+    [Fact]
+    public void EmptyAllGroup_MatchesTrue()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(StrategyConditionGroupOperator.All)
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void EmptyAnyGroup_MatchesFalse()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(StrategyConditionGroupOperator.Any)
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+    }
+
+    [Fact]
+    public void EmptyNoneGroup_MatchesTrue()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(StrategyConditionGroupOperator.None)
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void NestedGroups_AnyInsideAll_EvaluatesCorrectly()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.Weekday) },
+                new[] { Group(StrategyConditionGroupOperator.Any, new[] { KeyboardMouseIdle() }) }
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
+
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void NestedGroups_DeepNesting_EvaluatesCorrectly()
+    {
+        var targetGuid = Guid.NewGuid();
+        var deepGroup = Group(
+            StrategyConditionGroupOperator.Any,
+            new[] { MonitorOff() },
+            new[] {
+                Group(
+                    StrategyConditionGroupOperator.All,
+                    new[] { TimeRange(new(9, 0), new(17, 0)) }
+                )
+            }
+        );
+
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.All) },
+                new[] { deepGroup }
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday, isMonitorOff: false)
+        );
+
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void UnknownPropagation_AllGroupWithUnknown_BecomesUnknown()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.All), KeyboardMouseIdle() }
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
+        );
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+    }
+
+    [Fact]
+    public void UnknownPropagation_AnyGroupWithTrueIgnoresUnknown()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.Any,
+                new[] { KeyboardMouseIdle(), Day(DayType.All) }
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
+        );
+
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void NoneGroupWithUnknown_StaysFalseIfAnyTrue()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.None,
+                new[] { Day(DayType.All), KeyboardMouseIdle() }
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
+        );
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+    }
+
+    [Fact]
+    public void OrphanGroupRemoved_EmptyGroupNotMatched()
+    {
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                null,
+                new[] { Group(StrategyConditionGroupOperator.Any) }
+            )
+        );
+
+        var config = new AppConfig { Rules = new() { rule } };
+        var normalized = ConfigService.Load();
+
+        var result = StrategyEvaluator.Resolve(
+            new AppConfig
+            {
+                ActivePlanGuid = ActivePlanGuid,
+                IdlePlanGuid = IdlePlanGuid,
+                Rules = config.Rules,
+            },
+            CreateContext(TestMonday)
+        );
+
+        Assert.False(result.IsFallback && result.PlanGuid == targetGuid);
     }
 }

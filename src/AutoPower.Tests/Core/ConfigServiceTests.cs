@@ -47,6 +47,7 @@ public class ConfigServiceTests : IDisposable
 
         try
         {
+            var defaultPlanGuid = Guid.NewGuid();
             var config = new AppConfig
             {
                 SchemaVersion = 2,
@@ -54,7 +55,7 @@ public class ConfigServiceTests : IDisposable
                 IdleTimeoutMinutes = 15,
                 ActivePlanGuid = Guid.NewGuid(),
                 IdlePlanGuid = Guid.NewGuid(),
-                DefaultPlanGuid = Guid.NewGuid(),
+                DefaultPlanGuid = defaultPlanGuid,
                 AutoStartEnabled = true,
                 Override = new()
                 {
@@ -67,7 +68,7 @@ public class ConfigServiceTests : IDisposable
                     new()
                     {
                         Name = "Test Rule",
-                        TargetPlanGuid = Guid.NewGuid(),
+                        TargetPlanGuid = defaultPlanGuid,
                         Priority = 5,
                         Condition = new()
                         {
@@ -244,5 +245,123 @@ public class ConfigServiceTests : IDisposable
                 File.Delete(_backupPath);
         }
         catch { }
+    }
+
+    [Fact]
+    public void SaveAndLoad_InvalidDefaultPlanGuid_IsCleared()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var config = new AppConfig
+            {
+                DefaultPlanGuid = Guid.NewGuid(),
+                Rules = new()
+                {
+                    new()
+                    {
+                        Name = "Rule1",
+                        TargetPlanGuid = Guid.NewGuid(),
+                        Priority = 1,
+                    }
+                },
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.Null(loaded.DefaultPlanGuid);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_ValidDefaultPlanGuid_IsPreserved()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var defaultPlanGuid = Guid.NewGuid();
+            var config = new AppConfig
+            {
+                DefaultPlanGuid = defaultPlanGuid,
+                Rules = new()
+                {
+                    new()
+                    {
+                        Name = "Rule1",
+                        TargetPlanGuid = defaultPlanGuid,
+                        Priority = 1,
+                    }
+                },
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.Equal(defaultPlanGuid, loaded.DefaultPlanGuid);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_OrphanEmptyGroups_AreRemoved()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var config = new AppConfig
+            {
+                Rules = new()
+                {
+                    new()
+                    {
+                        Name = "Rule1",
+                        TargetPlanGuid = Guid.NewGuid(),
+                        Priority = 1,
+                        Condition = new()
+                        {
+                            Operator = StrategyConditionGroupOperator.All,
+                            Conditions = new() { new() { Type = StrategyConditionType.DayType, DayType = DayType.All } },
+                            Groups = new()
+                            {
+                                new() { Operator = StrategyConditionGroupOperator.Any },
+                            },
+                        },
+                    }
+                },
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.Single(loaded.Rules);
+            Assert.Empty(loaded.Rules[0].Condition.Groups);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
     }
 }

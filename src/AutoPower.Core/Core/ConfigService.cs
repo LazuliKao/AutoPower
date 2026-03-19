@@ -68,11 +68,13 @@ internal static class ConfigService
             .ThenBy(rule => rule.Id.ToString())
             .ToList();
 
+        var validDefaultPlanGuid = ValidateDefaultPlanGuid(config.DefaultPlanGuid, normalizedRules);
+
         return config with
         {
             SchemaVersion = CurrentSchemaVersion,
             IdleTimeoutMinutes = Math.Max(1, config.IdleTimeoutMinutes),
-            DefaultPlanGuid = config.DefaultPlanGuid == Guid.Empty ? null : config.DefaultPlanGuid,
+            DefaultPlanGuid = validDefaultPlanGuid,
             Rules = normalizedRules,
             Override = config.Override ?? new(),
         };
@@ -84,29 +86,28 @@ internal static class ConfigService
         {
             Id = rule.Id == Guid.Empty ? Guid.NewGuid() : rule.Id,
             Name = string.IsNullOrWhiteSpace(rule.Name) ? "Rule" : rule.Name.Trim(),
-            Condition = NormalizeGroup(rule.Condition),
+            Condition = NormalizeGroupWithCycleDetection(rule.Condition),
             CreatedAt = rule.CreatedAt == default ? DateTime.UtcNow : rule.CreatedAt,
         };
     }
 
-    private static StrategyConditionGroup NormalizeGroup(StrategyConditionGroup? group)
+    private static Guid? ValidateDefaultPlanGuid(Guid? defaultPlanGuid, IReadOnlyList<StrategyRule> normalizedRules)
     {
-        if (group is null)
+        if (!defaultPlanGuid.HasValue || defaultPlanGuid.Value == Guid.Empty)
         {
-            return StrategyConditionGroup.MatchAll();
+            return null;
         }
 
-        var normalizedConditions = (group.Conditions ?? new())
-            .Select(NormalizeCondition)
-            .ToList();
-        var normalizedGroups = (group.Groups ?? new()).Select(NormalizeGroup).ToList();
+        var defaultPlan = defaultPlanGuid.Value;
+        var isValid = normalizedRules.Any(rule => rule.TargetPlanGuid == defaultPlan);
 
-        return group with
+        if (!isValid)
         {
-            Id = group.Id == Guid.Empty ? Guid.NewGuid() : group.Id,
-            Conditions = normalizedConditions,
-            Groups = normalizedGroups,
-        };
+            LoggerService.Warn($"DefaultPlanGuid {defaultPlan} does not reference any valid rule target. Clearing default.");
+            return null;
+        }
+
+        return defaultPlan;
     }
 
     private static StrategyCondition NormalizeCondition(StrategyCondition condition)
@@ -115,5 +116,49 @@ internal static class ConfigService
         {
             Id = condition.Id == Guid.Empty ? Guid.NewGuid() : condition.Id,
         };
+    }
+
+    private static StrategyConditionGroup NormalizeGroupWithCycleDetection(
+        StrategyConditionGroup? group,
+        HashSet<Guid>? visitedGroupIds = null
+    )
+    {
+        visitedGroupIds ??= new();
+
+        if (group is null)
+        {
+            return StrategyConditionGroup.MatchAll();
+        }
+
+        var groupId = group.Id == Guid.Empty ? Guid.NewGuid() : group.Id;
+
+        if (!visitedGroupIds.Add(groupId))
+        {
+            LoggerService.Warn($"Cycle detected in condition group {groupId}. Replacing with empty group.");
+            return StrategyConditionGroup.MatchAll();
+        }
+
+        var normalizedConditions = (group.Conditions ?? new())
+            .Select(NormalizeCondition)
+            .ToList();
+
+        var normalizedGroups = (group.Groups ?? new())
+            .Select(childGroup => NormalizeGroupWithCycleDetection(childGroup, new HashSet<Guid>(visitedGroupIds)))
+            .Where(g => !IsEmptyGroup(g))
+            .ToList();
+
+        visitedGroupIds.Remove(groupId);
+
+        return group with
+        {
+            Id = groupId,
+            Conditions = normalizedConditions,
+            Groups = normalizedGroups,
+        };
+    }
+
+    private static bool IsEmptyGroup(StrategyConditionGroup group)
+    {
+        return (group.Conditions ?? new()).Count == 0 && (group.Groups ?? new()).Count == 0;
     }
 }
