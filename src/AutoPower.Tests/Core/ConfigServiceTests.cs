@@ -1,4 +1,4 @@
-using AutoPower.Core;
+using System.Text.Json;
 using AutoPower.Core.Core;
 using AutoPower.Core.Core.Models;
 
@@ -26,9 +26,10 @@ public class ConfigServiceTests : IDisposable
         {
             var result = ConfigService.Load();
 
-            Assert.Equal(1, result.SchemaVersion);
+            Assert.Equal(2, result.SchemaVersion);
             Assert.Equal(5, result.IdleTimeoutMinutes);
             Assert.Equal(DetectionMode.Both, result.Mode);
+            Assert.Null(result.DefaultPlanGuid);
             Assert.Empty(result.Rules);
         }
         finally
@@ -53,6 +54,7 @@ public class ConfigServiceTests : IDisposable
                 IdleTimeoutMinutes = 15,
                 ActivePlanGuid = Guid.NewGuid(),
                 IdlePlanGuid = Guid.NewGuid(),
+                DefaultPlanGuid = Guid.NewGuid(),
                 AutoStartEnabled = true,
                 Override = new()
                 {
@@ -65,11 +67,29 @@ public class ConfigServiceTests : IDisposable
                     new()
                     {
                         Name = "Test Rule",
-                        DayType = DayType.Weekend,
-                        Start = new(10, 30),
-                        End = new(18, 0),
                         TargetPlanGuid = Guid.NewGuid(),
                         Priority = 5,
+                        Condition = new()
+                        {
+                            Operator = StrategyConditionGroupOperator.All,
+                            Conditions = new()
+                            {
+                                new() { Type = StrategyConditionType.DayType, DayType = DayType.Weekend },
+                                new() { Type = StrategyConditionType.TimeRange, Start = new(10, 30), End = new(18, 0) },
+                            },
+                            Groups = new()
+                            {
+                                new()
+                                {
+                                    Operator = StrategyConditionGroupOperator.Any,
+                                    Conditions = new()
+                                    {
+                                        new() { Type = StrategyConditionType.KeyboardMouseIdle },
+                                        new() { Type = StrategyConditionType.MonitorOff },
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
             };
@@ -82,16 +102,16 @@ public class ConfigServiceTests : IDisposable
             Assert.Equal(config.IdleTimeoutMinutes, loaded.IdleTimeoutMinutes);
             Assert.Equal(config.ActivePlanGuid, loaded.ActivePlanGuid);
             Assert.Equal(config.IdlePlanGuid, loaded.IdlePlanGuid);
+            Assert.Equal(config.DefaultPlanGuid, loaded.DefaultPlanGuid);
             Assert.Equal(config.AutoStartEnabled, loaded.AutoStartEnabled);
             Assert.Equal(config.Override.IsActive, loaded.Override.IsActive);
             Assert.Equal(config.Override.PlanGuid, loaded.Override.PlanGuid);
             Assert.Single(loaded.Rules);
             Assert.Equal(config.Rules[0].Name, loaded.Rules[0].Name);
-            Assert.Equal(config.Rules[0].DayType, loaded.Rules[0].DayType);
-            Assert.Equal(config.Rules[0].Start, loaded.Rules[0].Start);
-            Assert.Equal(config.Rules[0].End, loaded.Rules[0].End);
             Assert.Equal(config.Rules[0].TargetPlanGuid, loaded.Rules[0].TargetPlanGuid);
-            Assert.Equal(config.Rules[0].Priority, loaded.Rules[0].Priority);
+            Assert.Equal(StrategyConditionGroupOperator.All, loaded.Rules[0].Condition.Operator);
+            Assert.Equal(2, loaded.Rules[0].Condition.Conditions.Count);
+            Assert.Single(loaded.Rules[0].Condition.Groups);
         }
         finally
         {
@@ -118,7 +138,7 @@ public class ConfigServiceTests : IDisposable
 
         try
         {
-            var config = new AppConfig { SchemaVersion = 1 };
+            var config = new AppConfig { SchemaVersion = 2 };
             ConfigService.Save(config);
 
             Assert.True(File.Exists(ConfigService.ConfigFilePath));
@@ -160,6 +180,34 @@ public class ConfigServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_UnsupportedSchemaVersion_ReturnsDefaultConfig()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var dir = Path.GetDirectoryName(ConfigService.ConfigFilePath)!;
+            Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(new AppConfig { SchemaVersion = 1 }, AppConfigJsonContext.Default.AppConfig);
+            File.WriteAllText(ConfigService.ConfigFilePath, json);
+
+            var config = ConfigService.Load();
+
+            Assert.Equal(2, config.SchemaVersion);
+            Assert.Empty(config.Rules);
+            Assert.Null(config.DefaultPlanGuid);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
     public void Save_OverwritesExistingFile()
     {
         if (File.Exists(ConfigService.ConfigFilePath))
@@ -167,7 +215,7 @@ public class ConfigServiceTests : IDisposable
 
         try
         {
-            var config1 = new AppConfig { SchemaVersion = 1, IdleTimeoutMinutes = 5 };
+            var config1 = new AppConfig { SchemaVersion = 2, IdleTimeoutMinutes = 5 };
             ConfigService.Save(config1);
 
             var config2 = new AppConfig { SchemaVersion = 2, IdleTimeoutMinutes = 30 };

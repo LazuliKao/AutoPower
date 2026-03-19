@@ -9,7 +9,32 @@ public class ConfigSerializationTests
     [Fact]
     public void RoundTrip_SerializeDeserialize_PreservesValues()
     {
-        // Arrange
+        var keyboardIdleCondition = new StrategyCondition
+        {
+            Type = StrategyConditionType.KeyboardMouseIdle,
+        };
+        var monitorCondition = new StrategyCondition
+        {
+            Type = StrategyConditionType.MonitorOff,
+        };
+        var group = new StrategyConditionGroup
+        {
+            Operator = StrategyConditionGroupOperator.All,
+            Conditions = new()
+            {
+                new() { Type = StrategyConditionType.DayType, DayType = DayType.Weekday },
+                new() { Type = StrategyConditionType.TimeRange, Start = new(9, 0), End = new(17, 0) },
+            },
+            Groups = new()
+            {
+                new()
+                {
+                    Operator = StrategyConditionGroupOperator.Any,
+                    Conditions = new() { keyboardIdleCondition, monitorCondition },
+                },
+            },
+        };
+
         var config = new AppConfig
         {
             SchemaVersion = 2,
@@ -17,6 +42,7 @@ public class ConfigSerializationTests
             IdleTimeoutMinutes = 10,
             ActivePlanGuid = Guid.NewGuid(),
             IdlePlanGuid = Guid.NewGuid(),
+            DefaultPlanGuid = Guid.NewGuid(),
             AutoStartEnabled = true,
             Override = new()
             {
@@ -29,58 +55,52 @@ public class ConfigSerializationTests
                 new()
                 {
                     Name = "Work Hours",
-                    DayType = DayType.Weekday,
-                    Start = new(9, 0),
-                    End = new(17, 0),
                     TargetPlanGuid = Guid.NewGuid(),
                     Priority = 1,
+                    Condition = group,
                 },
             },
         };
 
-        // Act
         var json = JsonSerializer.Serialize(config, AppConfigJsonContext.Default.AppConfig);
         var deserialized = JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig);
 
-        // Assert
         Assert.NotNull(deserialized);
         Assert.Equal(config.SchemaVersion, deserialized.SchemaVersion);
         Assert.Equal(config.Mode, deserialized.Mode);
         Assert.Equal(config.IdleTimeoutMinutes, deserialized.IdleTimeoutMinutes);
         Assert.Equal(config.ActivePlanGuid, deserialized.ActivePlanGuid);
         Assert.Equal(config.IdlePlanGuid, deserialized.IdlePlanGuid);
+        Assert.Equal(config.DefaultPlanGuid, deserialized.DefaultPlanGuid);
         Assert.Equal(config.AutoStartEnabled, deserialized.AutoStartEnabled);
-
         Assert.Equal(config.Override.IsActive, deserialized.Override.IsActive);
         Assert.Equal(config.Override.PlanGuid, deserialized.Override.PlanGuid);
         Assert.Equal(config.Override.ExpiresAt, deserialized.Override.ExpiresAt);
-
         Assert.Single(deserialized.Rules);
-        var rule = config.Rules[0];
-        var deserializedRule = deserialized.Rules[0];
-        Assert.Equal(rule.Name, deserializedRule.Name);
-        Assert.Equal(rule.DayType, deserializedRule.DayType);
-        Assert.Equal(rule.Start, deserializedRule.Start);
-        Assert.Equal(rule.End, deserializedRule.End);
-        Assert.Equal(rule.TargetPlanGuid, deserializedRule.TargetPlanGuid);
-        Assert.Equal(rule.Priority, deserializedRule.Priority);
+
+        var rule = deserialized.Rules[0];
+        Assert.Equal("Work Hours", rule.Name);
+        Assert.Equal(config.Rules[0].TargetPlanGuid, rule.TargetPlanGuid);
+        Assert.Equal(StrategyConditionGroupOperator.All, rule.Condition.Operator);
+        Assert.Equal(2, rule.Condition.Conditions.Count);
+        Assert.Single(rule.Condition.Groups);
+        Assert.Equal(StrategyConditionGroupOperator.Any, rule.Condition.Groups[0].Operator);
+        Assert.Equal(2, rule.Condition.Groups[0].Conditions.Count);
     }
 
     [Fact]
     public void DefaultConfig_Serializes_WithExpectedDefaults()
     {
-        // Arrange
         var config = new AppConfig();
 
-        // Act
         var json = JsonSerializer.Serialize(config, AppConfigJsonContext.Default.AppConfig);
         var deserialized = JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig);
 
-        // Assert
         Assert.NotNull(deserialized);
-        Assert.Equal(1, deserialized.SchemaVersion);
+        Assert.Equal(2, deserialized.SchemaVersion);
         Assert.Equal(DetectionMode.Both, deserialized.Mode);
         Assert.Equal(5, deserialized.IdleTimeoutMinutes);
+        Assert.Null(deserialized.DefaultPlanGuid);
         Assert.Empty(deserialized.Rules);
         Assert.False(deserialized.AutoStartEnabled);
         Assert.False(deserialized.Override.IsActive);

@@ -24,11 +24,14 @@ public class DebugTests(ITestOutputHelper logger) : IDisposable
         logger.WriteLine($"Config loaded from: {ConfigService.ConfigFilePath}");
         logger.WriteLine($"  ActivePlanGuid : {config.ActivePlanGuid}");
         logger.WriteLine($"  IdlePlanGuid   : {config.IdlePlanGuid}");
+        logger.WriteLine($"  DefaultPlanGuid: {config.DefaultPlanGuid}");
         logger.WriteLine($"  Rules          : {config.Rules.Count}");
         logger.WriteLine($"  Override active: {config.Override.IsActive}");
         logger.WriteLine("");
 
         var knownGuids = new HashSet<Guid> { config.ActivePlanGuid, config.IdlePlanGuid };
+        if (config.DefaultPlanGuid.HasValue)
+            knownGuids.Add(config.DefaultPlanGuid.Value);
         foreach (var rule in config.Rules)
             knownGuids.Add(rule.TargetPlanGuid);
         if (config.Override.PlanGuid.HasValue)
@@ -39,7 +42,20 @@ public class DebugTests(ITestOutputHelper logger) : IDisposable
             .ToList();
 
         var from = DateTime.Now;
-        var timeline = PreviewEngine.GenerateTimeline(config, plans, from, hours: 24);
+        var timeline = PreviewEngine.GenerateTimeline(
+            config,
+            plans,
+            from,
+            hours: 24,
+            snapshot: new StrategyEvaluationContext
+            {
+                Now = from,
+                IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+                IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+                IsKeyboardMouseIdle = false,
+                IsMonitorOff = false,
+            }
+        );
 
         logger.WriteLine(
             $"Timeline from {from:g} (next 24 hours) — {timeline.Count} transition(s):"

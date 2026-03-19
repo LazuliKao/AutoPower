@@ -2,10 +2,6 @@ using AutoPower.Core.Core.Models;
 
 namespace AutoPower.Core.Strategy;
 
-/// <summary>
-/// Computes a preview timeline of upcoming power plan transitions
-/// based on the current configuration (override, schedule rules, defaults).
-/// </summary>
 public static class PreviewEngine
 {
     public sealed record TimelineEntry(
@@ -15,21 +11,19 @@ public static class PreviewEngine
         string Source
     );
 
-    /// <summary>
-    /// Generates a timeline of plan transitions for the next <paramref name="hours"/> hours
-    /// starting from <paramref name="from"/>.
-    /// </summary>
     public static List<TimelineEntry> GenerateTimeline(
         AppConfig config,
         IReadOnlyList<PowerPlanInfo> plans,
         DateTime from,
-        int hours = 24
+        int hours = 24,
+        StrategyEvaluationContext? snapshot = null
     )
     {
         from = from.ToUniversalTime();
 
         var entries = new List<TimelineEntry>();
         var until = from.AddHours(hours);
+        var baseSnapshot = snapshot ?? CreateSnapshot(config, from.ToLocalTime());
 
         string ResolvePlanName(Guid guid)
         {
@@ -38,19 +32,17 @@ public static class PreviewEngine
                 if (p.Guid == guid)
                     return p.Name;
             }
+
             return guid.ToString("B");
         }
 
-        // Phase 1: Override (if active and not expired)
         if (config.Override.IsActive && config.Override.PlanGuid.HasValue)
         {
             var overrideEnd = config.Override.ExpiresAt;
             if (overrideEnd is null || overrideEnd.Value > from)
             {
                 var effectiveEnd =
-                    overrideEnd.HasValue && overrideEnd.Value < until
-                        ? overrideEnd.Value
-                        : (DateTime?)null;
+                    overrideEnd.HasValue && overrideEnd.Value < until ? overrideEnd.Value : (DateTime?)null;
 
                 entries.Add(
                     new TimelineEntry(
@@ -63,48 +55,41 @@ public static class PreviewEngine
                     )
                 );
 
-                // If override covers the entire window, return early
                 if (effectiveEnd is null || effectiveEnd >= until)
                     return entries;
 
-                // Shift start to after override ends
                 from = effectiveEnd.Value;
             }
         }
 
-        // Phase 2: Walk through time in 1-minute granularity collecting transitions
-        // We track the "current" plan and emit an entry whenever it changes.
-        var enabledRules = config
-            .Rules.Where(r => r.IsEnabled)
-            .OrderByDescending(r => r.Priority)
-            .ThenBy(r => r.CreatedAt)
-            .ThenBy(r => r.Id.ToString())
-            .ToList();
-
         Guid? lastPlanGuid = null;
         string? lastSource = null;
-
-        // Collect all rule boundary times within the window to minimize iterations
         var fromLocal = from.ToLocalTime();
         var untilLocal = until.ToLocalTime();
-        var checkPoints = CollectCheckPoints(enabledRules, fromLocal, untilLocal);
+        var checkpoints = CollectCheckPoints(config.Rules, fromLocal, untilLocal);
 
-        foreach (var checkpointLocal in checkPoints)
+        foreach (var checkpointLocal in checkpoints)
         {
-            var (planGuid, source) = EvaluateAt(
+            var decision = StrategyEvaluator.Resolve(
                 config,
-                enabledRules,
-                plans,
-                checkpointLocal,
-                ResolvePlanName
+                baseSnapshot with
+                {
+                    Now = checkpointLocal,
+                }
             );
+            var source = decision.IsRuntimeDependent ? $"{decision.Source} (runtime snapshot)" : decision.Source;
 
-            if (planGuid != lastPlanGuid || source != lastSource)
+            if (decision.PlanGuid != lastPlanGuid || source != lastSource)
             {
                 entries.Add(
-                    new TimelineEntry(checkpointLocal, ResolvePlanName(planGuid), planGuid, source)
+                    new TimelineEntry(
+                        checkpointLocal,
+                        ResolvePlanName(decision.PlanGuid),
+                        decision.PlanGuid,
+                        source
+                    )
                 );
-                lastPlanGuid = planGuid;
+                lastPlanGuid = decision.PlanGuid;
                 lastSource = source;
             }
         }
@@ -112,76 +97,51 @@ public static class PreviewEngine
         return entries;
     }
 
-    private static (Guid planGuid, string source) EvaluateAt(
-        AppConfig config,
-        List<StrategyRule> enabledRules,
-        IReadOnlyList<PowerPlanInfo> plans,
-        DateTime time,
-        Func<Guid, string> resolveName
-    )
+    private static StrategyEvaluationContext CreateSnapshot(AppConfig config, DateTime now)
     {
-        var currentTime = TimeOnly.FromDateTime(time);
-        var dayOfWeek = time.DayOfWeek;
-
-        foreach (var rule in enabledRules)
+        return new()
         {
-            if (!MatchesDayType(rule.DayType, dayOfWeek))
-                continue;
-            if (!MatchesTimeRange(rule.Start, rule.End, currentTime))
-                continue;
-
-            return (rule.TargetPlanGuid, $"Rule: {rule.Name}");
-        }
-
-        // No rule matched — use default active plan
-        return (config.ActivePlanGuid, "Default (Active plan)");
+            Now = now,
+            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+        };
     }
 
-    /// <summary>
-    /// Collects all meaningful time checkpoints (rule start/end boundaries and day transitions)
-    /// within the window [from, until], so we don't have to iterate minute-by-minute.
-    /// </summary>
     private static List<DateTime> CollectCheckPoints(
-        List<StrategyRule> rules,
+        IReadOnlyList<StrategyRule> rules,
         DateTime from,
         DateTime until
     )
     {
         var points = new SortedSet<DateTime> { from };
-
-        // Walk each day in the window
         var day = from.Date;
+        var ranges = StrategyEvaluator.CollectTimeRanges(rules);
+
         while (day <= until.Date)
         {
-            // Add day boundaries
             var dayStart = day;
             if (dayStart >= from && dayStart <= until)
                 points.Add(dayStart);
 
-            // Midnight boundary for overnight rules
             var midnight = day.AddDays(1);
             if (midnight >= from && midnight <= until)
                 points.Add(midnight);
 
-            foreach (var rule in rules)
+            foreach (var range in ranges)
             {
-                // Rule start time on this day
-                var ruleStart = day.Add(rule.Start.ToTimeSpan());
-                if (ruleStart >= from && ruleStart <= until)
-                    points.Add(ruleStart);
+                var rangeStart = day.Add(range.Start.ToTimeSpan());
+                if (rangeStart >= from && rangeStart <= until)
+                    points.Add(rangeStart);
 
-                // 1 minute before rule start (transition point)
-                var beforeStart = ruleStart.AddMinutes(-1);
+                var beforeStart = rangeStart.AddMinutes(-1);
                 if (beforeStart >= from && beforeStart <= until)
                     points.Add(beforeStart);
 
-                // Rule end time on this day
-                var ruleEnd = day.Add(rule.End.ToTimeSpan());
-                if (ruleEnd >= from && ruleEnd <= until)
-                    points.Add(ruleEnd);
+                var rangeEnd = day.Add(range.End.ToTimeSpan());
+                if (rangeEnd >= from && rangeEnd <= until)
+                    points.Add(rangeEnd);
 
-                // 1 minute after rule end (transition out)
-                var afterEnd = ruleEnd.AddMinutes(1);
+                var afterEnd = rangeEnd.AddMinutes(1);
                 if (afterEnd >= from && afterEnd <= until)
                     points.Add(afterEnd);
             }
@@ -190,27 +150,5 @@ public static class PreviewEngine
         }
 
         return points.ToList();
-    }
-
-    private static bool MatchesDayType(DayType dayType, DayOfWeek dayOfWeek)
-    {
-        return dayType switch
-        {
-            DayType.All => true,
-            DayType.Weekday => dayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
-            DayType.Weekend => dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
-            _ => false,
-        };
-    }
-
-    private static bool MatchesTimeRange(TimeOnly start, TimeOnly end, TimeOnly current)
-    {
-        if (start <= end)
-        {
-            return current >= start && current <= end;
-        }
-
-        // Overnight range (e.g., 22:00 → 06:00)
-        return current >= start || current <= end;
     }
 }

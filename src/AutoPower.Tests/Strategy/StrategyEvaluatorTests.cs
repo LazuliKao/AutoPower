@@ -5,16 +5,48 @@ namespace AutoPower.Tests.Strategy;
 
 public class StrategyEvaluatorTests
 {
+    private static readonly Guid ActivePlanGuid = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid IdlePlanGuid = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly DateTime TestMonday = new(2025, 6, 2, 12, 0, 0);
     private static readonly DateTime TestSaturday = new(2025, 6, 7, 12, 0, 0);
-    private static readonly DateTime TestSunday = new(2025, 6, 8, 12, 0, 0);
+
+    private static AppConfig CreateConfig(
+        IReadOnlyList<StrategyRule>? rules = null,
+        Guid? defaultPlanGuid = null,
+        DetectionMode mode = DetectionMode.Both
+    )
+    {
+        return new()
+        {
+            Mode = mode,
+            ActivePlanGuid = ActivePlanGuid,
+            IdlePlanGuid = IdlePlanGuid,
+            DefaultPlanGuid = defaultPlanGuid,
+            Rules = rules?.ToList() ?? new(),
+        };
+    }
+
+    private static StrategyEvaluationContext CreateContext(
+        DateTime now,
+        DetectionMode mode = DetectionMode.Both,
+        bool? isKeyboardMouseIdle = null,
+        bool? isMonitorOff = null
+    )
+    {
+        return new()
+        {
+            Now = now,
+            IsKeyboardMouseDetectionEnabled = mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+            IsKeyboardMouseIdle = isKeyboardMouseIdle,
+            IsMonitorOff = isMonitorOff,
+        };
+    }
 
     private static StrategyRule CreateRule(
         Guid? id = null,
         string name = "Test Rule",
-        DayType dayType = DayType.All,
-        TimeOnly? start = null,
-        TimeOnly? end = null,
+        StrategyConditionGroup? condition = null,
         Guid? targetPlanGuid = null,
         int priority = 0,
         DateTime? createdAt = null,
@@ -25,9 +57,7 @@ public class StrategyEvaluatorTests
         {
             Id = id ?? Guid.NewGuid(),
             Name = name,
-            DayType = dayType,
-            Start = start ?? new TimeOnly(0, 0),
-            End = end ?? new TimeOnly(23, 59),
+            Condition = condition ?? StrategyConditionGroup.MatchAll(),
             TargetPlanGuid = targetPlanGuid ?? Guid.NewGuid(),
             Priority = priority,
             CreatedAt = createdAt ?? DateTime.UtcNow,
@@ -35,161 +65,206 @@ public class StrategyEvaluatorTests
         };
     }
 
-    [Fact]
-    public void NoRules_ReturnsNull()
+    private static StrategyCondition Day(DayType dayType)
     {
-        var rules = new List<StrategyRule>();
+        return new() { Type = StrategyConditionType.DayType, DayType = dayType };
+    }
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+    private static StrategyCondition TimeRange(TimeOnly start, TimeOnly end)
+    {
+        return new() { Type = StrategyConditionType.TimeRange, Start = start, End = end };
+    }
 
-        Assert.Null(result);
+    private static StrategyCondition KeyboardMouseIdle()
+    {
+        return new() { Type = StrategyConditionType.KeyboardMouseIdle };
+    }
+
+    private static StrategyCondition MonitorOff()
+    {
+        return new() { Type = StrategyConditionType.MonitorOff };
+    }
+
+    private static StrategyConditionGroup Group(
+        StrategyConditionGroupOperator @operator,
+        IEnumerable<StrategyCondition>? conditions = null,
+        IEnumerable<StrategyConditionGroup>? groups = null
+    )
+    {
+        return new()
+        {
+            Operator = @operator,
+            Conditions = conditions?.ToList() ?? new(),
+            Groups = groups?.ToList() ?? new(),
+        };
     }
 
     [Fact]
-    public void NoMatchingRules_ReturnsNull()
+    public void NoRules_NoDefault_ReturnsActiveFallback()
     {
+        var result = StrategyEvaluator.Resolve(CreateConfig(), CreateContext(TestMonday));
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+        Assert.Equal(AppState.Active, result.State);
+    }
+
+    [Fact]
+    public void DefaultPlan_IsUsedWhenNoRuleMatches()
+    {
+        var defaultPlanGuid = Guid.NewGuid();
         var rules = new List<StrategyRule>
         {
-            CreateRule(
-                dayType: DayType.Weekday,
-                start: new TimeOnly(9, 0),
-                end: new TimeOnly(17, 0)
-            ),
+            CreateRule(condition: Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekend) })),
         };
 
-        var result = StrategyEvaluator.Evaluate(rules, TestSaturday);
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(rules, defaultPlanGuid: defaultPlanGuid),
+            CreateContext(TestMonday)
+        );
 
-        Assert.Null(result);
+        Assert.Equal(defaultPlanGuid, result.PlanGuid);
+        Assert.True(result.IsDefault);
+        Assert.False(result.IsFallback);
     }
 
     [Fact]
-    public void SingleMatchingRule_ReturnsIt()
+    public void SingleMatchingRule_ReturnsItsPlan()
     {
         var targetGuid = Guid.NewGuid();
         var rules = new List<StrategyRule>
         {
             CreateRule(
-                id: Guid.NewGuid(),
                 name: "Work Hours",
-                dayType: DayType.All,
-                start: new TimeOnly(0, 0),
-                end: new TimeOnly(23, 59),
                 targetPlanGuid: targetGuid,
-                priority: 1,
-                isEnabled: true
+                condition: Group(
+                    StrategyConditionGroupOperator.All,
+                    new[] { Day(DayType.All), TimeRange(new(9, 0), new(17, 0)) }
+                )
             ),
         };
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
 
-        Assert.NotNull(result);
-        Assert.Equal(targetGuid, result.TargetPlanGuid);
+        Assert.Equal(targetGuid, result.PlanGuid);
+        Assert.Equal("Rule: Work Hours", result.Source);
+        Assert.False(result.IsFallback);
     }
 
     [Fact]
     public void DisabledRule_IsSkipped()
     {
-        var rules = new List<StrategyRule> { CreateRule(isEnabled: false) };
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(
+                new List<StrategyRule>
+                {
+                    CreateRule(isEnabled: false, condition: Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) })),
+                }
+            ),
+            CreateContext(TestMonday)
+        );
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
-
-        Assert.Null(result);
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
     }
 
     [Fact]
-    public void DayType_Weekday_MatchesMonday()
+    public void AnyGroup_MatchesWhenOneChildMatches()
     {
-        var rules = new List<StrategyRule> { CreateRule(dayType: DayType.Weekday) };
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.Any,
+                new[] { Day(DayType.Weekend), KeyboardMouseIdle() }
+            )
+        );
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
 
-        Assert.NotNull(result);
+        Assert.Equal(targetGuid, result.PlanGuid);
+        Assert.True(result.IsRuntimeDependent);
     }
 
     [Fact]
-    public void DayType_Weekday_DoesNotMatchSaturday()
+    public void AllGroup_RequiresAllChildrenToMatch()
     {
-        var rules = new List<StrategyRule> { CreateRule(dayType: DayType.Weekday) };
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.Weekday), KeyboardMouseIdle() }
+            )
+        );
 
-        var result = StrategyEvaluator.Evaluate(rules, TestSaturday);
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
 
-        Assert.Null(result);
+        Assert.Equal(targetGuid, result.PlanGuid);
     }
 
     [Fact]
-    public void DayType_Weekend_MatchesSaturday()
+    public void NoneGroup_MatchesWhenAllChildrenAreFalse()
     {
-        var rules = new List<StrategyRule> { CreateRule(dayType: DayType.Weekend) };
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.None,
+                new[] { Day(DayType.Weekend), MonitorOff() }
+            )
+        );
 
-        var result = StrategyEvaluator.Evaluate(rules, TestSaturday);
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(TestMonday, isMonitorOff: false)
+        );
 
-        Assert.NotNull(result);
+        Assert.Equal(targetGuid, result.PlanGuid);
     }
 
     [Fact]
-    public void DayType_All_MatchesAnyDay()
+    public void DisabledDetector_ProducesUnknownAndDoesNotMatchNoneGroup()
     {
-        var rules = new List<StrategyRule> { CreateRule(dayType: DayType.All) };
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(StrategyConditionGroupOperator.None, new[] { MonitorOff() })
+        );
 
-        var weekdayResult = StrategyEvaluator.Evaluate(rules, TestMonday);
-        var saturdayResult = StrategyEvaluator.Evaluate(rules, TestSaturday);
-        var sundayResult = StrategyEvaluator.Evaluate(rules, TestSunday);
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.KeyboardMouse),
+            CreateContext(TestMonday, mode: DetectionMode.KeyboardMouse, isKeyboardMouseIdle: false)
+        );
 
-        Assert.NotNull(weekdayResult);
-        Assert.NotNull(saturdayResult);
-        Assert.NotNull(sundayResult);
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
     }
 
     [Fact]
-    public void TimeRange_MatchesWithinRange()
+    public void OvernightTimeRange_MatchesAfterMidnight()
     {
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(start: new TimeOnly(9, 0), end: new TimeOnly(17, 0)),
-        };
+        var targetGuid = Guid.NewGuid();
+        var rule = CreateRule(
+            targetPlanGuid: targetGuid,
+            condition: Group(
+                StrategyConditionGroupOperator.All,
+                new[] { TimeRange(new(22, 0), new(6, 0)) }
+            )
+        );
 
-        var result = StrategyEvaluator.Evaluate(rules, new(2025, 6, 2, 12, 0, 0));
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(new List<StrategyRule> { rule }),
+            CreateContext(new DateTime(2025, 6, 2, 2, 0, 0))
+        );
 
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public void TimeRange_DoesNotMatchOutsideRange()
-    {
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(start: new TimeOnly(9, 0), end: new TimeOnly(17, 0)),
-        };
-
-        var result = StrategyEvaluator.Evaluate(rules, new(2025, 6, 2, 20, 0, 0));
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void OvernightRange_MatchesAfterMidnight()
-    {
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(start: new TimeOnly(22, 0), end: new TimeOnly(6, 0)),
-        };
-
-        var result = StrategyEvaluator.Evaluate(rules, new(2025, 6, 2, 2, 0, 0));
-
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public void OvernightRange_MatchesBeforeMidnight()
-    {
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(start: new TimeOnly(22, 0), end: new TimeOnly(6, 0)),
-        };
-
-        var result = StrategyEvaluator.Evaluate(rules, new(2025, 6, 2, 23, 0, 0));
-
-        Assert.NotNull(result);
+        Assert.Equal(targetGuid, result.PlanGuid);
     }
 
     [Fact]
@@ -200,23 +275,20 @@ public class StrategyEvaluatorTests
         var rules = new List<StrategyRule>
         {
             CreateRule(
-                id: Guid.NewGuid(),
                 targetPlanGuid: lowPriorityGuid,
                 priority: 1,
                 createdAt: DateTime.UtcNow.AddMinutes(-1)
             ),
             CreateRule(
-                id: Guid.NewGuid(),
                 targetPlanGuid: highPriorityGuid,
                 priority: 10,
                 createdAt: DateTime.UtcNow.AddMinutes(-2)
             ),
         };
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
 
-        Assert.NotNull(result);
-        Assert.Equal(highPriorityGuid, result.TargetPlanGuid);
+        Assert.Equal(highPriorityGuid, result.PlanGuid);
     }
 
     [Fact]
@@ -226,24 +298,17 @@ public class StrategyEvaluatorTests
         var laterGuid = Guid.NewGuid();
         var rules = new List<StrategyRule>
         {
+            CreateRule(targetPlanGuid: laterGuid, priority: 5, createdAt: DateTime.UtcNow),
             CreateRule(
-                id: Guid.NewGuid(),
-                targetPlanGuid: laterGuid,
-                priority: 5,
-                createdAt: DateTime.UtcNow
-            ),
-            CreateRule(
-                id: Guid.NewGuid(),
                 targetPlanGuid: earlierGuid,
                 priority: 5,
                 createdAt: DateTime.UtcNow.AddMinutes(-1)
             ),
         };
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
 
-        Assert.NotNull(result);
-        Assert.Equal(earlierGuid, result.TargetPlanGuid);
+        Assert.Equal(earlierGuid, result.PlanGuid);
     }
 
     [Fact]
@@ -258,9 +323,20 @@ public class StrategyEvaluatorTests
             CreateRule(id: earlierGuid, targetPlanGuid: earlierGuid, priority: 5, createdAt: now),
         };
 
-        var result = StrategyEvaluator.Evaluate(rules, TestMonday);
+        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
 
-        Assert.NotNull(result);
-        Assert.Equal(earlierGuid, result.TargetPlanGuid);
+        Assert.Equal(earlierGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void IdleFallback_UsesIdlePlan_WhenEnabledDetectorReportsIdle()
+    {
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(mode: DetectionMode.Both),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
+
+        Assert.Equal(IdlePlanGuid, result.PlanGuid);
+        Assert.Equal(AppState.Idle, result.State);
     }
 }

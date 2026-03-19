@@ -1,3 +1,4 @@
+using System.Linq;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using AutoPower.Core.Core.Models;
@@ -29,6 +30,7 @@ internal sealed class SettingsWindow
     private TextBox? _idleTimeoutTextBox;
     private ComboBox? _activePlanComboBox;
     private ComboBox? _idlePlanComboBox;
+    private ComboBox? _defaultPlanComboBox;
     private CheckBox? _autoStartCheckBox;
 
     private List<StrategyRule> _rules = new();
@@ -42,6 +44,8 @@ internal sealed class SettingsWindow
     private TextBox? _overrideTtlTextBox;
 
     private ScrollViewer? _previewScrollViewer;
+    private CheckBox? _previewKeyboardMouseIdleCheckBox;
+    private CheckBox? _previewMonitorOffCheckBox;
 
     internal event Action<string, string>? OnNotificationRequested;
     internal event Action<AppConfig>? OnConfigSaved;
@@ -217,6 +221,13 @@ internal sealed class SettingsWindow
                 .MinWidth(280)
         );
 
+        _defaultPlanComboBox = StyleInput(
+            new ComboBox()
+                .Items(new[] { "None" }.Concat(planNames).ToArray())
+                .SelectedIndex(GetOptionalPlanIndex(planGuids, _config.DefaultPlanGuid))
+                .MinWidth(280)
+        );
+
         _autoStartCheckBox = new CheckBox()
             .Text("Start AutoPower when Windows starts")
             .IsChecked(_config.AutoStartEnabled)
@@ -230,14 +241,14 @@ internal sealed class SettingsWindow
             .Children(
                 CreateSectionCard(
                     "Detection Strategy",
-                    "Select how user activity should be detected before switching plans.",
+                    "Select which runtime detectors are available to rule conditions and fallback.",
                     _modeKeyboardMouse,
                     _modeMonitorSleep,
                     _modeBoth
                 ),
                 CreateSectionCard(
                     "Power Transition",
-                    "Tune idle threshold and map plans for active and idle states.",
+                    "Tune idle threshold and map plans for rule default and final fallback.",
                     new StackPanel()
                         .Horizontal()
                         .Spacing(8)
@@ -246,8 +257,9 @@ internal sealed class SettingsWindow
                             _idleTimeoutTextBox
                         ),
                     CreateDivider(),
-                    CreateFieldBlock("Active plan", _activePlanComboBox),
-                    CreateFieldBlock("Idle plan", _idlePlanComboBox)
+                    CreateFieldBlock("Default plan", _defaultPlanComboBox),
+                    CreateFieldBlock("Active fallback plan", _activePlanComboBox),
+                    CreateFieldBlock("Idle fallback plan", _idlePlanComboBox)
                 ),
                 CreateSectionCard(
                     "Startup",
@@ -272,7 +284,7 @@ internal sealed class SettingsWindow
             .Foreground(TextMuted);
 
         _rulesScrollViewer = new ScrollViewer()
-            .Height(320)
+            .Height(360)
             .VerticalScroll(ScrollMode.Auto)
             .HorizontalScroll(ScrollMode.Disabled)
             .Background(SurfaceInput)
@@ -289,7 +301,7 @@ internal sealed class SettingsWindow
             .Children(
                 CreateSectionCard(
                     "Strategy Rules",
-                    "Edit each rule inline: name, day type, schedule window, and target power plan.",
+                    "Each rule selects a plan and evaluates a condition group. UI currently edits one condition group per rule with time, day, keyboard/mouse idle, and monitor-off leaves.",
                     _rulesSummaryLabel,
                     _rulesScrollViewer,
                     new StackPanel().Horizontal().Spacing(8).Children(addButton)
@@ -318,18 +330,50 @@ internal sealed class SettingsWindow
                 .IsChecked(rule.IsEnabled)
                 .Foreground(TextPrimary)
                 .FontFamily("Consolas");
-
             var nameTextBox = StyleInput(new TextBox().Text(rule.Name).Placeholder("Rule name"));
+            var operatorComboBox = StyleInput(
+                    new ComboBox()
+                        .Items(new[] { "All", "Any", "None" })
+                        .SelectedIndex((int)rule.Condition.Operator)
+                )
+                .Width(130);
+            var priorityTextBox = StyleInput(
+                new TextBox().Text(rule.Priority.ToString()).Width(88).Placeholder("Priority")
+            );
+            var dayCondition = FindFirstCondition(rule.Condition, StrategyConditionType.DayType);
+            var timeCondition = FindFirstCondition(rule.Condition, StrategyConditionType.TimeRange);
+            var dayEnabledCheckBox = new CheckBox()
+                .Text("Day filter")
+                .IsChecked(dayCondition is not null)
+                .Foreground(TextPrimary)
+                .FontFamily("Consolas");
+            var timeEnabledCheckBox = new CheckBox()
+                .Text("Time filter")
+                .IsChecked(timeCondition is not null)
+                .Foreground(TextPrimary)
+                .FontFamily("Consolas");
+            var keyboardMouseCheckBox = new CheckBox()
+                .Text("Keyboard/Mouse idle")
+                .IsChecked(ContainsConditionType(rule.Condition, StrategyConditionType.KeyboardMouseIdle))
+                .Foreground(TextPrimary)
+                .FontFamily("Consolas");
+            var monitorOffCheckBox = new CheckBox()
+                .Text("Monitor off")
+                .IsChecked(ContainsConditionType(rule.Condition, StrategyConditionType.MonitorOff))
+                .Foreground(TextPrimary)
+                .FontFamily("Consolas");
             var dayTypeComboBox = StyleInput(
                     new ComboBox()
                         .Items(new[] { "All", "Weekday", "Weekend" })
-                        .SelectedIndex((int)rule.DayType)
+                        .SelectedIndex((int)(dayCondition?.DayType ?? DayType.All))
                 )
                 .Width(130);
             var startTextBox = StyleInput(
-                new TextBox().Text(rule.Start.ToString("HH:mm")).Width(88)
+                new TextBox().Text((timeCondition?.Start ?? new TimeOnly(9, 0)).ToString("HH:mm")).Width(88)
             );
-            var endTextBox = StyleInput(new TextBox().Text(rule.End.ToString("HH:mm")).Width(88));
+            var endTextBox = StyleInput(
+                new TextBox().Text((timeCondition?.End ?? new TimeOnly(17, 0)).ToString("HH:mm")).Width(88)
+            );
             var planComboBox = StyleInput(
                 new ComboBox()
                     .Items(planNames.ToArray())
@@ -342,21 +386,21 @@ internal sealed class SettingsWindow
                     rule,
                     enabledCheckBox,
                     nameTextBox,
+                    operatorComboBox,
+                    priorityTextBox,
+                    dayEnabledCheckBox,
                     dayTypeComboBox,
+                    timeEnabledCheckBox,
                     startTextBox,
                     endTextBox,
+                    keyboardMouseCheckBox,
+                    monitorOffCheckBox,
                     planComboBox
                 )
             );
 
             var removeButton = CreateDangerButton("Remove", () => OnRemoveRuleClicked(rule.Id))
                 .Width(92);
-
-            var metaLabel = new Label()
-                .Text($"Priority {rule.Priority}")
-                .FontSize(11)
-                .FontFamily("Consolas")
-                .Foreground(TextMuted);
 
             var headerLeft = new StackPanel()
                 .Horizontal()
@@ -367,7 +411,11 @@ internal sealed class SettingsWindow
                         .Bold()
                         .FontFamily("Bahnschrift")
                         .Foreground(TextPrimary),
-                    metaLabel
+                    new Label()
+                        .Text($"ID {rule.Id.ToString()[..8]}")
+                        .FontSize(11)
+                        .FontFamily("Consolas")
+                        .Foreground(TextMuted)
                 );
 
             var headerRight = new StackPanel()
@@ -399,11 +447,28 @@ internal sealed class SettingsWindow
                                 .Horizontal()
                                 .Spacing(8)
                                 .Children(
+                                    CreateFieldBlock("Group operator", operatorComboBox),
+                                    CreateFieldBlock("Priority", priorityTextBox)
+                                ),
+                            CreateFieldBlock("Target plan", planComboBox),
+                            CreateDivider(),
+                            new StackPanel()
+                                .Horizontal()
+                                .Spacing(8)
+                                .Children(dayEnabledCheckBox, timeEnabledCheckBox),
+                            new StackPanel()
+                                .Horizontal()
+                                .Spacing(8)
+                                .Children(
                                     CreateFieldBlock("Day type", dayTypeComboBox),
                                     CreateFieldBlock("Start", startTextBox),
                                     CreateFieldBlock("End", endTextBox)
                                 ),
-                            CreateFieldBlock("Plan", planComboBox)
+                            CreateDivider(),
+                            new StackPanel()
+                                .Horizontal()
+                                .Spacing(8)
+                                .Children(keyboardMouseCheckBox, monitorOffCheckBox)
                         )
                 );
 
@@ -421,9 +486,7 @@ internal sealed class SettingsWindow
                     .Padding(14)
                     .Child(
                         new Label()
-                            .Text(
-                                "No rules defined yet. Click 'Add Rule' to create your first schedule strategy."
-                            )
+                            .Text("No rules defined yet. Click 'Add Rule' to create your first action rule.")
                             .FontFamily("Consolas")
                             .Foreground(TextMuted)
                     )
@@ -440,10 +503,8 @@ internal sealed class SettingsWindow
         var newRule = new StrategyRule
         {
             Name = $"Rule {_rules.Count + 1}",
-            DayType = DayType.All,
-            Start = new(9, 0),
-            End = new(17, 0),
-            TargetPlanGuid = _config.ActivePlanGuid,
+            Condition = StrategyConditionGroup.ForSchedule(DayType.All, new(9, 0), new(17, 0)),
+            TargetPlanGuid = _config.DefaultPlanGuid ?? _config.ActivePlanGuid,
             Priority = _rules.Count + 1,
             IsEnabled = true,
         };
@@ -466,6 +527,7 @@ internal sealed class SettingsWindow
 
         _rulesScrollViewer.Content = BuildRulesPanel();
         _rulesSummaryLabel?.Text(FormatRulesSummary());
+        RefreshPreviewTab();
     }
 
     private string FormatRulesSummary()
@@ -482,14 +544,6 @@ internal sealed class SettingsWindow
         foreach (var editor in _ruleEditors)
         {
             var source = editor.SourceRule;
-
-            var dayType = editor.DayTypeComboBox.SelectedIndex switch
-            {
-                1 => DayType.Weekday,
-                2 => DayType.Weekend,
-                _ => DayType.All,
-            };
-
             var selectedPlanIndex = editor.PlanComboBox.SelectedIndex;
             var selectedPlanGuid = source.TargetPlanGuid;
             if (selectedPlanIndex >= 0 && selectedPlanIndex < _plans.Count)
@@ -500,14 +554,61 @@ internal sealed class SettingsWindow
             var ruleName = string.IsNullOrWhiteSpace(editor.NameTextBox.Text)
                 ? source.Name
                 : editor.NameTextBox.Text.Trim();
+            var dayType = editor.DayTypeComboBox.SelectedIndex switch
+            {
+                1 => DayType.Weekday,
+                2 => DayType.Weekend,
+                _ => DayType.All,
+            };
+            var priority = source.Priority;
+            if (int.TryParse(editor.PriorityTextBox.Text, out var parsedPriority))
+            {
+                priority = Math.Max(0, parsedPriority);
+            }
+
+            var conditions = new List<StrategyCondition>();
+            if (editor.DayEnabledCheckBox.IsChecked == true)
+            {
+                conditions.Add(new() { Type = StrategyConditionType.DayType, DayType = dayType });
+            }
+
+            if (editor.TimeEnabledCheckBox.IsChecked == true)
+            {
+                conditions.Add(
+                    new()
+                    {
+                        Type = StrategyConditionType.TimeRange,
+                        Start = ParseTimeOrFallback(editor.StartTextBox.Text, new TimeOnly(9, 0)),
+                        End = ParseTimeOrFallback(editor.EndTextBox.Text, new TimeOnly(17, 0)),
+                    }
+                );
+            }
+
+            if (editor.KeyboardMouseIdleCheckBox.IsChecked == true)
+            {
+                conditions.Add(new() { Type = StrategyConditionType.KeyboardMouseIdle });
+            }
+
+            if (editor.MonitorOffCheckBox.IsChecked == true)
+            {
+                conditions.Add(new() { Type = StrategyConditionType.MonitorOff });
+            }
 
             updatedRules.Add(
                 source with
                 {
                     Name = ruleName,
-                    DayType = dayType,
-                    Start = ParseTimeOrFallback(editor.StartTextBox.Text, source.Start),
-                    End = ParseTimeOrFallback(editor.EndTextBox.Text, source.End),
+                    Priority = priority,
+                    Condition = new()
+                    {
+                        Operator = editor.OperatorComboBox.SelectedIndex switch
+                        {
+                            1 => StrategyConditionGroupOperator.Any,
+                            2 => StrategyConditionGroupOperator.None,
+                            _ => StrategyConditionGroupOperator.All,
+                        },
+                        Conditions = conditions,
+                    },
                     TargetPlanGuid = selectedPlanGuid,
                     IsEnabled = editor.EnabledCheckBox.IsChecked ?? source.IsEnabled,
                 }
@@ -525,6 +626,44 @@ internal sealed class SettingsWindow
         }
 
         return fallback;
+    }
+
+    private static bool ContainsConditionType(
+        StrategyConditionGroup? group,
+        StrategyConditionType conditionType
+    )
+    {
+        return FindFirstCondition(group, conditionType) is not null;
+    }
+
+    private static StrategyCondition? FindFirstCondition(
+        StrategyConditionGroup? group,
+        StrategyConditionType conditionType
+    )
+    {
+        if (group is null)
+        {
+            return null;
+        }
+
+        foreach (var condition in group.Conditions)
+        {
+            if (condition.Type == conditionType)
+            {
+                return condition;
+            }
+        }
+
+        foreach (var childGroup in group.Groups)
+        {
+            var found = FindFirstCondition(childGroup, conditionType);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     #endregion
@@ -596,7 +735,7 @@ internal sealed class SettingsWindow
             var selectedPlan = _plans[planIndex];
             if (int.TryParse(_overrideTtlTextBox?.Text ?? "60", out var ttlMinutes))
             {
-                _config = _config with
+                _config = BuildConfigFromEditors() with
                 {
                     Override = new()
                     {
@@ -633,7 +772,7 @@ internal sealed class SettingsWindow
 
     private void OnClearOverrideClicked()
     {
-        _config = _config with { Override = new() };
+        _config = BuildConfigFromEditors() with { Override = new() };
 
         _overrideStatusLabel?.Text("No Override Active");
         _overrideStatusLabel?.Foreground(TextMuted);
@@ -648,8 +787,19 @@ internal sealed class SettingsWindow
 
     private Element CreatePreviewTabContent()
     {
+        _previewKeyboardMouseIdleCheckBox = new CheckBox()
+            .Text("Assume keyboard/mouse is idle")
+            .IsChecked(false)
+            .Foreground(TextPrimary)
+            .FontFamily("Consolas");
+        _previewMonitorOffCheckBox = new CheckBox()
+            .Text("Assume monitor is off")
+            .IsChecked(false)
+            .Foreground(TextPrimary)
+            .FontFamily("Consolas");
+
         _previewScrollViewer = new ScrollViewer()
-            .Height(420)
+            .Height(380)
             .VerticalScroll(ScrollMode.Auto)
             .HorizontalScroll(ScrollMode.Disabled)
             .Background(SurfaceInput)
@@ -665,7 +815,11 @@ internal sealed class SettingsWindow
             .Children(
                 CreateSectionCard(
                     "Timeline Preview",
-                    "Upcoming power plan transitions for the next 24 hours based on current configuration.",
+                    "Preview uses the selected detector snapshot below. Detector-based rules are runtime-dependent and not future-guaranteed.",
+                    new StackPanel()
+                        .Horizontal()
+                        .Spacing(8)
+                        .Children(_previewKeyboardMouseIdleCheckBox, _previewMonitorOffCheckBox),
                     _previewScrollViewer
                 )
             );
@@ -673,7 +827,14 @@ internal sealed class SettingsWindow
 
     private Element BuildTimelinePanel()
     {
-        var timeline = PreviewEngine.GenerateTimeline(_config, _plans, DateTime.Now, hours: 24);
+        var draftConfig = BuildConfigFromEditors();
+        var timeline = PreviewEngine.GenerateTimeline(
+            draftConfig,
+            _plans,
+            DateTime.Now,
+            hours: 24,
+            snapshot: BuildPreviewSnapshot(draftConfig)
+        );
 
         var rows = new List<Element>();
 
@@ -986,7 +1147,29 @@ internal sealed class SettingsWindow
         return 0;
     }
 
-    private void OnSaveClicked()
+    private int GetOptionalPlanIndex(List<Guid> planGuids, Guid? targetGuid)
+    {
+        if (!targetGuid.HasValue || targetGuid.Value == Guid.Empty)
+        {
+            return 0;
+        }
+
+        return GetPlanIndex(planGuids, targetGuid.Value) + 1;
+    }
+
+    private Guid? GetOptionalPlanGuid(ComboBox? comboBox)
+    {
+        var index = comboBox?.SelectedIndex ?? 0;
+        if (index <= 0)
+        {
+            return null;
+        }
+
+        var planIndex = index - 1;
+        return planIndex >= 0 && planIndex < _plans.Count ? _plans[planIndex].Guid : null;
+    }
+
+    private AppConfig BuildConfigFromEditors()
     {
         SyncRulesFromEditors();
 
@@ -1006,7 +1189,6 @@ internal sealed class SettingsWindow
 
         var activeIndex = _activePlanComboBox?.SelectedIndex ?? 0;
         var idleIndex = _idlePlanComboBox?.SelectedIndex ?? 0;
-
         var activePlanGuid = Guid.Empty;
         var idlePlanGuid = Guid.Empty;
 
@@ -1016,18 +1198,33 @@ internal sealed class SettingsWindow
         if (idleIndex >= 0 && idleIndex < _plans.Count)
             idlePlanGuid = _plans[idleIndex].Guid;
 
-        var autoStart = _autoStartCheckBox?.IsChecked ?? false;
-
-        var updatedConfig = _config with
+        return _config with
         {
             Mode = mode,
             IdleTimeoutMinutes = idleTimeout,
             ActivePlanGuid = activePlanGuid,
             IdlePlanGuid = idlePlanGuid,
+            DefaultPlanGuid = GetOptionalPlanGuid(_defaultPlanComboBox),
             Rules = new(_rules),
-            AutoStartEnabled = autoStart,
+            AutoStartEnabled = _autoStartCheckBox?.IsChecked ?? false,
         };
+    }
 
+    private StrategyEvaluationContext BuildPreviewSnapshot(AppConfig config)
+    {
+        return new()
+        {
+            Now = DateTime.Now,
+            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+            IsKeyboardMouseIdle = _previewKeyboardMouseIdleCheckBox?.IsChecked,
+            IsMonitorOff = _previewMonitorOffCheckBox?.IsChecked,
+        };
+    }
+
+    private void OnSaveClicked()
+    {
+        var updatedConfig = BuildConfigFromEditors();
         OnConfigSaved?.Invoke(updatedConfig);
         _window?.Close();
     }
@@ -1038,27 +1235,45 @@ internal sealed class SettingsWindow
             StrategyRule sourceRule,
             CheckBox enabledCheckBox,
             TextBox nameTextBox,
+            ComboBox operatorComboBox,
+            TextBox priorityTextBox,
+            CheckBox dayEnabledCheckBox,
             ComboBox dayTypeComboBox,
+            CheckBox timeEnabledCheckBox,
             TextBox startTextBox,
             TextBox endTextBox,
+            CheckBox keyboardMouseIdleCheckBox,
+            CheckBox monitorOffCheckBox,
             ComboBox planComboBox
         )
         {
             SourceRule = sourceRule;
             EnabledCheckBox = enabledCheckBox;
             NameTextBox = nameTextBox;
+            OperatorComboBox = operatorComboBox;
+            PriorityTextBox = priorityTextBox;
+            DayEnabledCheckBox = dayEnabledCheckBox;
             DayTypeComboBox = dayTypeComboBox;
+            TimeEnabledCheckBox = timeEnabledCheckBox;
             StartTextBox = startTextBox;
             EndTextBox = endTextBox;
+            KeyboardMouseIdleCheckBox = keyboardMouseIdleCheckBox;
+            MonitorOffCheckBox = monitorOffCheckBox;
             PlanComboBox = planComboBox;
         }
 
         internal StrategyRule SourceRule { get; }
         internal CheckBox EnabledCheckBox { get; }
         internal TextBox NameTextBox { get; }
+        internal ComboBox OperatorComboBox { get; }
+        internal TextBox PriorityTextBox { get; }
+        internal CheckBox DayEnabledCheckBox { get; }
         internal ComboBox DayTypeComboBox { get; }
+        internal CheckBox TimeEnabledCheckBox { get; }
         internal TextBox StartTextBox { get; }
         internal TextBox EndTextBox { get; }
+        internal CheckBox KeyboardMouseIdleCheckBox { get; }
+        internal CheckBox MonitorOffCheckBox { get; }
         internal ComboBox PlanComboBox { get; }
     }
 

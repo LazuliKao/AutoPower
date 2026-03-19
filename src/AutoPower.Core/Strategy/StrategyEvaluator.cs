@@ -4,21 +4,257 @@ namespace AutoPower.Core.Strategy;
 
 internal static class StrategyEvaluator
 {
-    internal static StrategyRule? Evaluate(IReadOnlyList<StrategyRule> rules, DateTime now)
+    private enum ConditionMatchResult
     {
-        var currentTime = TimeOnly.FromDateTime(now);
-        var dayOfWeek = now.DayOfWeek;
+        False,
+        True,
+        Unknown,
+    }
 
-        var matches = rules
-            .Where(r => r.IsEnabled)
-            .Where(r => MatchesDayType(r.DayType, dayOfWeek))
-            .Where(r => MatchesTimeRange(r.Start, r.End, currentTime))
-            .OrderByDescending(r => r.Priority)
-            .ThenBy(r => r.CreatedAt)
-            .ThenBy(r => r.Id.ToString())
+    internal static StrategyDecision Resolve(AppConfig config, StrategyEvaluationContext context)
+    {
+        foreach (var rule in GetOrderedRules(config.Rules))
+        {
+            if (!rule.IsEnabled)
+            {
+                continue;
+            }
+
+            var evaluation = EvaluateGroup(rule.Condition, context);
+            if (evaluation.Result != ConditionMatchResult.True)
+            {
+                continue;
+            }
+
+            return new()
+            {
+                PlanGuid = rule.TargetPlanGuid,
+                State = AppState.Active,
+                Source = $"Rule: {rule.Name}",
+                RuleId = rule.Id,
+                IsRuntimeDependent = evaluation.IsRuntimeDependent,
+            };
+        }
+
+        if (config.DefaultPlanGuid.HasValue && config.DefaultPlanGuid.Value != Guid.Empty)
+        {
+            return new()
+            {
+                PlanGuid = config.DefaultPlanGuid.Value,
+                State = AppState.Active,
+                Source = "Default plan",
+                IsDefault = true,
+            };
+        }
+
+        var isIdle = ResolveFallbackIdle(config.Mode, context);
+        return new()
+        {
+            PlanGuid = isIdle ? config.IdlePlanGuid : config.ActivePlanGuid,
+            State = isIdle ? AppState.Idle : AppState.Active,
+            Source = isIdle ? "Fallback: Idle plan" : "Fallback: Active plan",
+            IsFallback = true,
+            IsRuntimeDependent = true,
+        };
+    }
+
+    internal static IReadOnlyList<StrategyRule> GetOrderedRules(IReadOnlyList<StrategyRule> rules)
+    {
+        return rules
+            .Where(rule => rule.TargetPlanGuid != Guid.Empty)
+            .OrderByDescending(rule => rule.Priority)
+            .ThenBy(rule => rule.CreatedAt)
+            .ThenBy(rule => rule.Id.ToString())
             .ToList();
+    }
 
-        return matches.Count > 0 ? matches[0] : null;
+    internal static IReadOnlyList<(TimeOnly Start, TimeOnly End)> CollectTimeRanges(
+        IReadOnlyList<StrategyRule> rules
+    )
+    {
+        var ranges = new List<(TimeOnly Start, TimeOnly End)>();
+        foreach (var rule in rules)
+        {
+            CollectTimeRanges(rule.Condition, ranges);
+        }
+
+        return ranges;
+    }
+
+    private static void CollectTimeRanges(
+        StrategyConditionGroup? group,
+        List<(TimeOnly Start, TimeOnly End)> ranges
+    )
+    {
+        if (group is null)
+        {
+            return;
+        }
+
+        foreach (var condition in group.Conditions)
+        {
+            if (condition.Type == StrategyConditionType.TimeRange)
+            {
+                ranges.Add((condition.Start, condition.End));
+            }
+        }
+
+        foreach (var childGroup in group.Groups)
+        {
+            CollectTimeRanges(childGroup, ranges);
+        }
+    }
+
+    private static bool ResolveFallbackIdle(DetectionMode mode, StrategyEvaluationContext context)
+    {
+        var keyboardMouseIdle = mode is DetectionMode.KeyboardMouse or DetectionMode.Both
+            && context.IsKeyboardMouseIdle == true;
+        var monitorIdle = mode is DetectionMode.MonitorSleep or DetectionMode.Both
+            && context.IsMonitorOff == true;
+
+        return keyboardMouseIdle || monitorIdle;
+    }
+
+    private static (ConditionMatchResult Result, bool IsRuntimeDependent) EvaluateGroup(
+        StrategyConditionGroup? group,
+        StrategyEvaluationContext context
+    )
+    {
+        if (group is null)
+        {
+            return (ConditionMatchResult.True, false);
+        }
+
+        var results = new List<ConditionMatchResult>();
+        var isRuntimeDependent = false;
+
+        foreach (var condition in group.Conditions)
+        {
+            var evaluation = EvaluateCondition(condition, context);
+            results.Add(evaluation.Result);
+            isRuntimeDependent |= evaluation.IsRuntimeDependent;
+        }
+
+        foreach (var childGroup in group.Groups)
+        {
+            var evaluation = EvaluateGroup(childGroup, context);
+            results.Add(evaluation.Result);
+            isRuntimeDependent |= evaluation.IsRuntimeDependent;
+        }
+
+        return (Combine(group.Operator, results), isRuntimeDependent);
+    }
+
+    private static (ConditionMatchResult Result, bool IsRuntimeDependent) EvaluateCondition(
+        StrategyCondition condition,
+        StrategyEvaluationContext context
+    )
+    {
+        return condition.Type switch
+        {
+            StrategyConditionType.DayType =>
+                (MatchesDayType(condition.DayType, context.Now.DayOfWeek)
+                    ? ConditionMatchResult.True
+                    : ConditionMatchResult.False, false),
+            StrategyConditionType.TimeRange =>
+                (MatchesTimeRange(condition.Start, condition.End, TimeOnly.FromDateTime(context.Now))
+                    ? ConditionMatchResult.True
+                    : ConditionMatchResult.False, false),
+            StrategyConditionType.KeyboardMouseIdle =>
+                EvaluateRuntimeCondition(
+                    context.IsKeyboardMouseDetectionEnabled,
+                    context.IsKeyboardMouseIdle
+                ),
+            StrategyConditionType.MonitorOff =>
+                EvaluateRuntimeCondition(context.IsMonitorDetectionEnabled, context.IsMonitorOff),
+            _ => (ConditionMatchResult.False, false),
+        };
+    }
+
+    private static (ConditionMatchResult Result, bool IsRuntimeDependent) EvaluateRuntimeCondition(
+        bool isEnabled,
+        bool? state
+    )
+    {
+        if (!isEnabled || !state.HasValue)
+        {
+            return (ConditionMatchResult.Unknown, true);
+        }
+
+        return (state.Value ? ConditionMatchResult.True : ConditionMatchResult.False, true);
+    }
+
+    private static ConditionMatchResult Combine(
+        StrategyConditionGroupOperator groupOperator,
+        List<ConditionMatchResult> results
+    )
+    {
+        if (results.Count == 0)
+        {
+            return groupOperator switch
+            {
+                StrategyConditionGroupOperator.Any => ConditionMatchResult.False,
+                StrategyConditionGroupOperator.All => ConditionMatchResult.True,
+                StrategyConditionGroupOperator.None => ConditionMatchResult.True,
+                _ => ConditionMatchResult.False,
+            };
+        }
+
+        return groupOperator switch
+        {
+            StrategyConditionGroupOperator.All => CombineAll(results),
+            StrategyConditionGroupOperator.Any => CombineAny(results),
+            StrategyConditionGroupOperator.None => CombineNone(results),
+            _ => ConditionMatchResult.False,
+        };
+    }
+
+    private static ConditionMatchResult CombineAll(List<ConditionMatchResult> results)
+    {
+        var hasUnknown = false;
+        foreach (var result in results)
+        {
+            if (result == ConditionMatchResult.False)
+            {
+                return ConditionMatchResult.False;
+            }
+
+            hasUnknown |= result == ConditionMatchResult.Unknown;
+        }
+
+        return hasUnknown ? ConditionMatchResult.Unknown : ConditionMatchResult.True;
+    }
+
+    private static ConditionMatchResult CombineAny(List<ConditionMatchResult> results)
+    {
+        var hasUnknown = false;
+        foreach (var result in results)
+        {
+            if (result == ConditionMatchResult.True)
+            {
+                return ConditionMatchResult.True;
+            }
+
+            hasUnknown |= result == ConditionMatchResult.Unknown;
+        }
+
+        return hasUnknown ? ConditionMatchResult.Unknown : ConditionMatchResult.False;
+    }
+
+    private static ConditionMatchResult CombineNone(List<ConditionMatchResult> results)
+    {
+        var hasUnknown = false;
+        foreach (var result in results)
+        {
+            if (result == ConditionMatchResult.True)
+            {
+                return ConditionMatchResult.False;
+            }
+
+            hasUnknown |= result == ConditionMatchResult.Unknown;
+        }
+
+        return hasUnknown ? ConditionMatchResult.Unknown : ConditionMatchResult.True;
     }
 
     private static bool MatchesDayType(DayType dayType, DayOfWeek dayOfWeek)

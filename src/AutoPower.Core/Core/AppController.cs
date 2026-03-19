@@ -13,8 +13,8 @@ internal sealed class AppController : IDisposable
     private MonitorStateDetector? _monitorStateDetector;
     private Timer? _periodicTimer;
     private Guid? _currentPlanGuid;
-    private bool _isIdleFromIdleDetector;
-    private bool _isIdleFromMonitorDetector;
+    private bool? _isKeyboardMouseIdle;
+    private bool? _isMonitorOff;
     private bool _disposed;
 
     internal AppState CurrentState { get; private set; } = AppState.Active;
@@ -168,6 +168,8 @@ internal sealed class AppController : IDisposable
         _monitorStateDetector?.Dispose();
         _idleDetector = null;
         _monitorStateDetector = null;
+        _isKeyboardMouseIdle = null;
+        _isMonitorOff = null;
 
         switch (Config.Mode)
         {
@@ -197,13 +199,13 @@ internal sealed class AppController : IDisposable
 
     private void OnIdleStateChanged(bool isIdle)
     {
-        _isIdleFromIdleDetector = isIdle;
+        _isKeyboardMouseIdle = isIdle;
         EvaluateState();
     }
 
     private void OnMonitorStateChanged(bool isMonitorOff)
     {
-        _isIdleFromMonitorDetector = isMonitorOff;
+        _isMonitorOff = isMonitorOff;
         EvaluateState();
     }
 
@@ -214,9 +216,9 @@ internal sealed class AppController : IDisposable
             if (_disposed)
                 return;
 
-            var isIdle = _isIdleFromIdleDetector || _isIdleFromMonitorDetector;
             Guid targetPlanGuid;
             AppState newState;
+            string source;
 
             if (Config.Override.IsActive)
             {
@@ -236,33 +238,29 @@ internal sealed class AppController : IDisposable
                 {
                     targetPlanGuid = Config.Override.PlanGuid.Value;
                     newState = AppState.ManualOverride;
+                    source = "Manual override";
                 }
                 else
                 {
-                    targetPlanGuid = isIdle ? Config.IdlePlanGuid : Config.ActivePlanGuid;
-                    newState = isIdle ? AppState.Idle : AppState.Active;
+                    var decision = StrategyEvaluator.Resolve(Config, BuildEvaluationContext(DateTime.Now));
+                    targetPlanGuid = decision.PlanGuid;
+                    newState = decision.State;
+                    source = decision.Source;
                 }
             }
             else
             {
-                var matchedRule = StrategyEvaluator.Evaluate(Config.Rules, DateTime.Now);
-                if (matchedRule != null)
-                {
-                    targetPlanGuid = matchedRule.TargetPlanGuid;
-                    newState = AppState.Active;
-                }
-                else
-                {
-                    targetPlanGuid = isIdle ? Config.IdlePlanGuid : Config.ActivePlanGuid;
-                    newState = isIdle ? AppState.Idle : AppState.Active;
-                }
+                var decision = StrategyEvaluator.Resolve(Config, BuildEvaluationContext(DateTime.Now));
+                targetPlanGuid = decision.PlanGuid;
+                newState = decision.State;
+                source = decision.Source;
             }
 
             if (CurrentState != newState)
             {
                 CurrentState = newState;
                 StateChanged?.Invoke(CurrentState);
-                LoggerService.Info($"State changed to {newState}");
+                LoggerService.Info($"State changed to {newState} ({source})");
             }
 
             if (_currentPlanGuid != targetPlanGuid)
@@ -270,15 +268,27 @@ internal sealed class AppController : IDisposable
                 var success = PowerPlanManager.SetActivePlan(targetPlanGuid);
                 if (success)
                 {
-                    LoggerService.Info($"Power plan switched to {targetPlanGuid}");
+                    LoggerService.Info($"Power plan switched to {targetPlanGuid} ({source})");
                     _currentPlanGuid = targetPlanGuid;
                 }
                 else
                 {
-                    LoggerService.Error($"Failed to switch power plan to {targetPlanGuid}");
+                    LoggerService.Error($"Failed to switch power plan to {targetPlanGuid} ({source})");
                 }
             }
         }
+    }
+
+    private StrategyEvaluationContext BuildEvaluationContext(DateTime now)
+    {
+        return new()
+        {
+            Now = now,
+            IsKeyboardMouseDetectionEnabled = Config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled = Config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+            IsKeyboardMouseIdle = _isKeyboardMouseIdle,
+            IsMonitorOff = _isMonitorOff,
+        };
     }
 
     public void Dispose()
