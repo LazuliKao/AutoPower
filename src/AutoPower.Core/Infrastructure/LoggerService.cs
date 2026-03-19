@@ -10,7 +10,7 @@ internal static class LoggerService
 
     static LoggerService()
     {
-        _logDirectory = Path.GetFullPath("logs");
+        _logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
         _logFileNameFormat = "'autopower-'yyyy-MM-dd'.log'";
     }
 

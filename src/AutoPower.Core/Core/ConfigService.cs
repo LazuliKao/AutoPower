@@ -7,11 +7,7 @@ namespace AutoPower.Core.Core;
 internal static class ConfigService
 {
     internal static string ConfigFilePath { get; } =
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "AutoPower",
-            "config.json"
-        );
+        Path.Combine(AppContext.BaseDirectory, "data", "config.json");
 
     internal static AppConfig Load()
     {

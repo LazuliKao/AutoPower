@@ -36,5 +36,5 @@ After launch, use the tray icon to open settings and choose detection mode, acti
 
 ## Data Locations
 
-- Config: `%APPDATA%\AutoPower\config.json`
-- Logs: `%APPDATA%\AutoPower\logs\`
+- Config: `./data/config.json`
+- Logs: `./logs/`
