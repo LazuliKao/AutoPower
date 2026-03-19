@@ -12,9 +12,25 @@ using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 AutoPower.Infrastructure.AdminElevationManager.RequestElevationIfNeeded();
 #endif
 
-var mutex = Kernel32.CreateMutexW(IntPtr.Zero, false, "AutoPower_SingleInstance");
+const string SingleInstanceMutexName = "AutoPower_SingleInstance";
+const string OpenSettingsEventName = "AutoPower_OpenSettings_Request";
+
+var mutex = Kernel32.CreateMutexW(IntPtr.Zero, false, SingleInstanceMutexName);
 if (mutex != IntPtr.Zero && Kernel32.GetLastError() == Kernel32.ERROR_ALREADY_EXISTS)
 {
+    try
+    {
+        using var openSettingsEvent = EventWaitHandle.OpenExisting(OpenSettingsEventName);
+        openSettingsEvent.Set();
+    }
+    catch (WaitHandleCannotBeOpenedException)
+    {
+    }
+    catch (Exception ex)
+    {
+        LoggerService.Error("Failed to notify existing instance to open settings", ex);
+    }
+
     return;
 }
 
@@ -52,12 +68,38 @@ try
         tray.UpdateTooltip($"AutoPower - {state}");
     };
 
+    using var openSettingsEvent = new EventWaitHandle(
+        false,
+        EventResetMode.AutoReset,
+        OpenSettingsEventName
+    );
+
     controller.Start();
     tray.Create(IntPtr.Zero);
     tray.UpdateState(controller.CurrentState);
 
+    var openSettingsSignalRegistration = ThreadPool.RegisterWaitForSingleObject(
+        openSettingsEvent,
+        static (state, timedOut) =>
+        {
+            if (timedOut)
+            {
+                return;
+            }
+
+            if (state is TrayIcon trayIcon)
+            {
+                trayIcon.RequestOpenSettings();
+            }
+        },
+        tray,
+        Timeout.Infinite,
+        false
+    );
+
     exitSignal.Wait();
 
+    openSettingsSignalRegistration.Unregister(null);
     controller.Stop();
     LoggerService.Info("AutoPower shutting down.");
 }

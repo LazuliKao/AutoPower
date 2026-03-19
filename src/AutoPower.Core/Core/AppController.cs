@@ -25,6 +25,7 @@ internal sealed class AppController : IDisposable
     internal AppController()
     {
         Config = ConfigService.Load();
+        EnsureConfigPlanGuids();
     }
 
     internal void Start()
@@ -106,12 +107,59 @@ internal sealed class AppController : IDisposable
         lock (_lock)
         {
             Config = ConfigService.Load();
+            EnsureConfigPlanGuids();
             _idleDetector?.Dispose();
             _monitorStateDetector?.Dispose();
             InitializeDetectors();
             LoggerService.Info("Configuration reloaded");
             EvaluateState();
         }
+    }
+
+    private void EnsureConfigPlanGuids()
+    {
+        var activeMissing = Config.ActivePlanGuid == Guid.Empty;
+        var idleMissing = Config.IdlePlanGuid == Guid.Empty;
+        if (!activeMissing && !idleMissing)
+        {
+            return;
+        }
+
+        var plans = PowerPlanManager.EnumeratePlans();
+
+        Guid fallbackPlanGuid = Guid.Empty;
+        foreach (var plan in plans)
+        {
+            if (plan.IsActive)
+            {
+                fallbackPlanGuid = plan.Guid;
+                break;
+            }
+
+            if (fallbackPlanGuid == Guid.Empty)
+            {
+                fallbackPlanGuid = plan.Guid;
+            }
+        }
+
+        if (fallbackPlanGuid == Guid.Empty)
+        {
+            LoggerService.Warn("No power plans found; cannot auto-fill missing plan GUIDs");
+            return;
+        }
+
+        var normalizedConfig = Config with
+        {
+            ActivePlanGuid = activeMissing ? fallbackPlanGuid : Config.ActivePlanGuid,
+            IdlePlanGuid = idleMissing ? fallbackPlanGuid : Config.IdlePlanGuid,
+        };
+
+        Config = normalizedConfig;
+        ConfigService.Save(Config);
+
+        LoggerService.Warn(
+            $"Detected empty power plan GUID in config. Auto-filled missing values with {fallbackPlanGuid}"
+        );
     }
 
     private void InitializeDetectors()

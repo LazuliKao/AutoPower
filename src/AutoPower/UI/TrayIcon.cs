@@ -1,8 +1,10 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using AutoPower.Core.Core.Models;
+using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Infrastructure.Win32;
 using AutoPower.Infrastructure.Win32;
+using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
 using User32 = AutoPower.Core.Infrastructure.Win32.User32;
 
 namespace AutoPower.UI;
@@ -14,11 +16,13 @@ internal sealed class TrayIcon : IDisposable
 
     private const int TrayIconId = 1;
     private const int MsgTrayCallback = (int)Shell32.WM_TRAYICON;
+    private const uint MsgOpenSettingsRequest = 0x8001;
 
     private const int CmdStatus = 0;
     private const int CmdSettings = 1001;
     private const int CmdClearOverride = 1002;
     private const int CmdExit = 1003;
+    private const uint ErrorClassAlreadyExists = 1410;
 
     private static readonly IntPtr IdiApplication = new(32512);
 
@@ -67,7 +71,14 @@ internal sealed class TrayIcon : IDisposable
 
             if (User32.RegisterClassExW(ref wc) == 0)
             {
-                return;
+                var registerError = Kernel32.GetLastError();
+                if (registerError != ErrorClassAlreadyExists)
+                {
+                    LoggerService.Error(
+                        $"TrayIcon init failed: RegisterClassExW error={registerError}"
+                    );
+                    return;
+                }
             }
         }
         finally
@@ -92,12 +103,20 @@ internal sealed class TrayIcon : IDisposable
 
         if (_windowHandle == IntPtr.Zero)
         {
+            var createWindowError = Kernel32.GetLastError();
+            LoggerService.Error(
+                $"TrayIcon init failed: CreateWindowExW error={createWindowError}"
+            );
             return;
         }
 
         var notifyData = CreateNotifyIconData();
         if (!Shell32.Shell_NotifyIconW(Shell32.NIM_ADD, ref notifyData))
         {
+            var notifyIconError = Kernel32.GetLastError();
+            LoggerService.Error(
+                $"TrayIcon init failed: Shell_NotifyIconW(NIM_ADD) error={notifyIconError}"
+            );
             return;
         }
 
@@ -105,10 +124,21 @@ internal sealed class TrayIcon : IDisposable
         Shell32.Shell_NotifyIconW(Shell32.NIM_SETVERSION, ref notifyData);
 
         MSG msg;
-        while (User32.GetMessageW(out msg, IntPtr.Zero, 0, 0) != 0)
+        int messageResult;
+        while ((messageResult = User32.GetMessageW(out msg, IntPtr.Zero, 0, 0)) != 0)
         {
             User32.TranslateMessage(ref msg);
             User32.DispatchMessageW(ref msg);
+        }
+
+        if (messageResult == -1)
+        {
+            var getMessageError = Kernel32.GetLastError();
+            LoggerService.Error($"TrayIcon message loop failed: GetMessageW error={getMessageError}");
+        }
+        else
+        {
+            LoggerService.Info("TrayIcon message loop exited");
         }
 
         Shell_NotifyIconDelete();
@@ -169,6 +199,10 @@ internal sealed class TrayIcon : IDisposable
             case User32.WM_COMMAND:
                 var commandId = wParam.ToInt32() & 0xFFFF;
                 HandleMenuCommand(commandId);
+                break;
+
+            case MsgOpenSettingsRequest:
+                OnOpenSettings?.Invoke();
                 break;
 
             case User32.WM_CLOSE:
@@ -268,6 +302,14 @@ internal sealed class TrayIcon : IDisposable
             case CmdExit:
                 OnExit?.Invoke();
                 break;
+        }
+    }
+
+    internal void RequestOpenSettings()
+    {
+        if (_windowHandle != IntPtr.Zero)
+        {
+            User32.PostMessageW(_windowHandle, MsgOpenSettingsRequest, IntPtr.Zero, IntPtr.Zero);
         }
     }
 
