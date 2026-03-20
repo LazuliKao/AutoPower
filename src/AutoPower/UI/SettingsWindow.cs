@@ -1,7 +1,9 @@
 using System.Linq;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Diagnostics;
 using AutoPower.Core.Core.Models;
+using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Strategy;
 
 namespace AutoPower.UI;
@@ -37,7 +39,7 @@ internal sealed class SettingsWindow
     private readonly List<RuleEditorControls> _ruleEditors = new();
 
     private Label? _rulesSummaryLabel;
-    private ScrollViewer? _rulesScrollViewer;
+    private Border? _rulesContainer;
 
     private Label? _overrideStatusLabel;
     private ComboBox? _overridePlanComboBox;
@@ -78,6 +80,7 @@ internal sealed class SettingsWindow
             .UseWin32()
             .UseMewVGWin32()
             .Run(_window);
+        Application.Quit();
     }
 
     private Element CreateContent()
@@ -157,11 +160,13 @@ internal sealed class SettingsWindow
                     self.Foreground = theme.Palette.Accent;
                 }
             );
-        Task.Delay(100)
+        Task.Delay(500)
             .ContinueWith(_ =>
             {
-                placeholder.Child = createContent();
-                ;
+                Application.Current.Dispatcher?.BeginInvoke(() =>
+                {
+                    placeholder.Child = createContent();
+                });
             })
             .ConfigureAwait(false);
         return placeholder;
@@ -283,16 +288,13 @@ internal sealed class SettingsWindow
             .FontSize(11)
             .Foreground(TextMuted);
 
-        _rulesScrollViewer = new ScrollViewer()
-            .Height(360)
-            .VerticalScroll(ScrollMode.Auto)
-            .HorizontalScroll(ScrollMode.Disabled)
+        _rulesContainer = new Border()
             .Background(SurfaceInput)
             .BorderBrush(BorderColor)
             .BorderThickness(1)
-            .Padding(10);
-
-        _rulesScrollViewer.Content = BuildRulesPanel();
+            .CornerRadius(8)
+            .Padding(8)
+            .Child(BuildRulesPanel());
 
         return new StackPanel()
             .Vertical()
@@ -303,7 +305,7 @@ internal sealed class SettingsWindow
                     "Strategy Rules",
                     "Each rule selects a plan and evaluates a condition group. UI currently edits one condition group per rule with time, day, keyboard/mouse idle, and monitor-off leaves.",
                     _rulesSummaryLabel,
-                    _rulesScrollViewer,
+                    _rulesContainer,
                     new StackPanel().Horizontal().Spacing(8).Children(addButton)
                 )
             );
@@ -330,15 +332,17 @@ internal sealed class SettingsWindow
                 .IsChecked(rule.IsEnabled)
                 .Foreground(TextPrimary)
                 .FontFamily("Consolas");
-            var nameTextBox = StyleInput(new TextBox().Text(rule.Name).Placeholder("Rule name"));
-            var priorityTextBox = StyleInput(
-                new TextBox().Text(rule.Priority.ToString()).Width(88).Placeholder("Priority")
+            var nameTextBox = StyleCompactInput(
+                new TextBox().Text(rule.Name).Placeholder("Rule name").MinWidth(220)
             );
-            var planComboBox = StyleInput(
+            var priorityTextBox = StyleCompactInput(
+                new TextBox().Text(rule.Priority.ToString()).Width(72).Placeholder("Priority")
+            );
+            var planComboBox = StyleCompactInput(
                 new ComboBox()
                     .Items(planNames.ToArray())
                     .SelectedIndex(GetPlanIndex(planGuids, rule.TargetPlanGuid))
-                    .MinWidth(260)
+                    .MinWidth(220)
             );
 
             var editor = new RuleEditorControls(
@@ -351,12 +355,12 @@ internal sealed class SettingsWindow
             );
             _ruleEditors.Add(editor);
 
-            var removeButton = CreateDangerButton("Remove", () => OnRemoveRuleClicked(rule.Id))
-                .Width(92);
+            var removeButton = CreateCompactDangerButton("Del", () => OnRemoveRuleClicked(rule.Id))
+                .Width(42);
 
             var headerLeft = new StackPanel()
                 .Horizontal()
-                .Spacing(8)
+                .Spacing(6)
                 .Children(
                     new Label()
                         .Text($"Rule {i + 1}")
@@ -370,16 +374,26 @@ internal sealed class SettingsWindow
                         .Foreground(TextMuted)
                 );
 
-            var headerRight = new StackPanel()
-                .Horizontal()
-                .Spacing(8)
-                .Right()
-                .Children(enabledCheckBox, removeButton);
-
             var headerRow = new StackPanel()
+                .Vertical()
+                .Spacing(4)
+                .Children(
+                    headerLeft,
+                    new StackPanel().Horizontal().Spacing(6).Children(enabledCheckBox, removeButton)
+                );
+
+            var detailsRow = new StackPanel()
                 .Horizontal()
                 .Spacing(8)
-                .Children(headerLeft, headerRight);
+                .Children(
+                    CreateInlineField("Name", nameTextBox, 48),
+                    CreateInlineField("Priority", priorityTextBox, 58)
+                );
+
+            var planRow = new StackPanel()
+                .Horizontal()
+                .Spacing(8)
+                .Children(CreateInlineField("Target plan", planComboBox, 80));
 
             var treeEditor = BuildGroupPanel(editor, editor.RootGroupState, 0, isRoot: true);
 
@@ -388,25 +402,12 @@ internal sealed class SettingsWindow
                 .BorderBrush(BorderColor)
                 .BorderThickness(1)
                 .CornerRadius(8)
-                .Padding(10)
+                .Padding(8)
                 .Child(
                     new StackPanel()
                         .Vertical()
-                        .Spacing(8)
-                        .Children(
-                            headerRow,
-                            CreateDivider(),
-                            CreateFieldBlock("Name", nameTextBox),
-                            new StackPanel()
-                                .Horizontal()
-                                .Spacing(8)
-                                .Children(
-                                    CreateFieldBlock("Priority", priorityTextBox)
-                                ),
-                            CreateFieldBlock("Target plan", planComboBox),
-                            CreateDivider(),
-                            treeEditor
-                        )
+                        .Spacing(6)
+                        .Children(headerRow, CreateDivider(), detailsRow, planRow, treeEditor)
                 );
 
             elements.Add(rulePanel);
@@ -423,7 +424,9 @@ internal sealed class SettingsWindow
                     .Padding(14)
                     .Child(
                         new Label()
-                            .Text("No rules defined yet. Click 'Add Rule' to create your first action rule.")
+                            .Text(
+                                "No rules defined yet. Click 'Add Rule' to create your first action rule."
+                            )
                             .FontFamily("Consolas")
                             .Foreground(TextMuted)
                     )
@@ -459,10 +462,10 @@ internal sealed class SettingsWindow
 
     private void RebuildScheduleRulesPanel()
     {
-        if (_rulesScrollViewer is null)
+        if (_rulesContainer is null)
             return;
 
-        _rulesScrollViewer.Content = BuildRulesPanel();
+        _rulesContainer.Child = BuildRulesPanel();
         _rulesSummaryLabel?.Text(FormatRulesSummary());
         RefreshPreviewTab();
     }
@@ -526,11 +529,7 @@ internal sealed class SettingsWindow
 
     private static StrategyGroupEditorState CreateGroupStateFromModel(StrategyConditionGroup group)
     {
-        var state = new StrategyGroupEditorState
-        {
-            Id = group.Id,
-            Operator = group.Operator,
-        };
+        var state = new StrategyGroupEditorState { Id = group.Id, Operator = group.Operator };
 
         foreach (var condition in group.Conditions)
         {
@@ -717,37 +716,39 @@ internal sealed class SettingsWindow
         bool isRoot
     )
     {
-        var operatorComboBox = StyleInput(
+        var operatorComboBox = StyleCompactInput(
                 new ComboBox()
                     .Items(new[] { "All", "Any", "None" })
                     .SelectedIndex((int)group.Operator)
             )
-            .Width(130);
+            .Width(92);
         group.OperatorComboBox = operatorComboBox;
 
-        var addGroupButton = CreatePrimaryButton(
-            "Add Group",
-            () =>
-            {
-                SyncRulesFromEditors();
-                group.Groups.Add(new StrategyGroupEditorState());
-                RebuildScheduleRulesPanel();
-            }
-        ).Width(112);
+        var addGroupButton = CreateCompactPrimaryButton(
+                "+ Group",
+                () =>
+                {
+                    SyncRulesFromEditors();
+                    group.Groups.Add(new StrategyGroupEditorState());
+                    RebuildScheduleRulesPanel();
+                }
+            )
+            .Width(56);
 
-        var addConditionButton = CreatePrimaryButton(
-            "Add Condition",
-            () =>
-            {
-                SyncRulesFromEditors();
-                group.Conditions.Add(new StrategyConditionEditorState { TypeIndex = 0 });
-                RebuildScheduleRulesPanel();
-            }
-        ).Width(132);
+        var addConditionButton = CreateCompactPrimaryButton(
+                "+ Cond",
+                () =>
+                {
+                    SyncRulesFromEditors();
+                    group.Conditions.Add(new StrategyConditionEditorState { TypeIndex = 0 });
+                    RebuildScheduleRulesPanel();
+                }
+            )
+            .Width(56);
 
         var headerLeft = new StackPanel()
             .Horizontal()
-            .Spacing(8)
+            .Spacing(6)
             .Children(
                 new Label()
                     .Text(isRoot ? "Root Group" : "Group")
@@ -761,37 +762,41 @@ internal sealed class SettingsWindow
                     .Foreground(TextMuted)
             );
 
-        var headerRightItems = new List<Element>
-        {
-            CreateFieldBlock("Operator", operatorComboBox),
-            addConditionButton,
-            addGroupButton,
-        };
+        var headerActions = new StackPanel()
+            .Horizontal()
+            .Spacing(6)
+            .Children(operatorComboBox, addConditionButton, addGroupButton);
 
         if (!isRoot)
         {
-            headerRightItems.Add(
-                CreateDangerButton(
-                    "Delete",
-                    () =>
-                    {
-                        SyncRulesFromEditors();
-                        RemoveGroup(editor.RootGroupState, group.Id);
-                        RebuildScheduleRulesPanel();
-                    }
-                ).Width(92)
+            headerActions.Children(
+                CreateCompactDangerButton(
+                        "Del",
+                        () =>
+                        {
+                            SyncRulesFromEditors();
+                            RemoveGroup(editor.RootGroupState, group.Id);
+                            RebuildScheduleRulesPanel();
+                        }
+                    )
+                    .Width(42)
             );
         }
 
         var headerRow = new StackPanel()
-            .Horizontal()
-            .Spacing(8)
+            .Vertical()
+            .Spacing(4)
             .Children(
                 headerLeft,
-                new StackPanel().Horizontal().Spacing(8).Right().Children(headerRightItems.ToArray())
+                new Label()
+                    .Text("Operator")
+                    .FontFamily("Consolas")
+                    .FontSize(10)
+                    .Foreground(TextMuted),
+                headerActions
             );
 
-        var rows = new List<Element> { headerRow, CreateDivider() };
+        var rows = new List<Element> { headerRow };
 
         foreach (var condition in group.Conditions)
         {
@@ -814,14 +819,21 @@ internal sealed class SettingsWindow
             );
         }
 
-        return new Border()
-            .Background(SurfaceCard)
-            .BorderBrush(BorderColor)
+        var indent = depth * 12;
+        var groupPanel = new Border()
+            .Background(depth == 0 ? SurfaceCard : SurfacePanel)
+            .BorderBrush(depth == 0 ? BorderColor : DividerColor)
             .BorderThickness(1)
-            .CornerRadius(8)
-            .Padding(10)
-            .Margin(0, depth == 0 ? 0 : 8, 0, 0)
+            .CornerRadius(depth == 0 ? 8 : 6)
+            .Padding(depth == 0 ? 10 : 8)
             .Child(new StackPanel().Vertical().Spacing(8).Children(rows.ToArray()));
+
+        if (depth > 0)
+        {
+            groupPanel.Margin(indent, 0, 0, 0);
+        }
+
+        return groupPanel;
     }
 
     private Element BuildConditionRow(
@@ -831,96 +843,102 @@ internal sealed class SettingsWindow
         int depth
     )
     {
-        var typeComboBox = StyleInput(
+        var typeComboBox = StyleCompactInput(
                 new ComboBox()
                     .Items(new[] { "DayType", "TimeRange", "KeyboardMouseIdle", "MonitorOff" })
                     .SelectedIndex(condition.TypeIndex)
             )
-            .Width(160);
+            .Width(136);
         condition.TypeComboBox = typeComboBox;
 
         var inputs = BuildConditionInputs(condition);
 
-        var applyTypeButton = CreatePrimaryButton(
-            "Apply Type",
-            () =>
-            {
-                SyncRulesFromEditors();
-                RebuildScheduleRulesPanel();
-            }
-        ).Width(104);
+        var applyTypeButton = CreateCompactPrimaryButton(
+                "Apply",
+                () =>
+                {
+                    SyncRulesFromEditors();
+                    RebuildScheduleRulesPanel();
+                }
+            )
+            .Width(52);
 
-        var removeButton = CreateDangerButton(
-            "Delete",
-            () =>
-            {
-                SyncRulesFromEditors();
-                group.Conditions.RemoveAll(item => item.Id == condition.Id);
-                RebuildScheduleRulesPanel();
-            }
-        ).Width(92);
+        var removeButton = CreateCompactDangerButton(
+                "Del",
+                () =>
+                {
+                    SyncRulesFromEditors();
+                    group.Conditions.RemoveAll(item => item.Id == condition.Id);
+                    RebuildScheduleRulesPanel();
+                }
+            )
+            .Width(42);
 
         var row = new StackPanel()
-            .Vertical()
+            .Horizontal()
             .Spacing(6)
-            .Children(
-                new StackPanel()
-                    .Horizontal()
-                    .Spacing(8)
-                    .Children(
-                        CreateFieldBlock("Type", typeComboBox),
-                        applyTypeButton,
-                        removeButton
-                    ),
-                inputs
-            );
+            .Children(typeComboBox, inputs, applyTypeButton, removeButton);
 
-        return new Border()
+        var rowCard = new Border()
             .Background(SurfaceInput)
             .BorderBrush(BorderColor)
             .BorderThickness(1)
             .CornerRadius(6)
-            .Padding(10)
-            .Margin(0, depth == 0 ? 0 : 6, 0, 0)
+            .Padding(6)
             .Child(row);
+
+        if (depth > 0)
+        {
+            rowCard.Margin(depth * 12, 0, 0, 0);
+        }
+
+        return rowCard;
     }
 
     private Element BuildConditionInputs(StrategyConditionEditorState condition)
     {
-        var conditionType = GetConditionType(condition.TypeComboBox?.SelectedIndex ?? condition.TypeIndex);
+        var conditionType = GetConditionType(
+            condition.TypeComboBox?.SelectedIndex ?? condition.TypeIndex
+        );
         condition.TypeIndex = (int)conditionType;
 
         switch (conditionType)
         {
             case StrategyConditionType.DayType:
             {
-                var dayTypeComboBox = StyleInput(
+                var dayTypeComboBox = StyleCompactInput(
                         new ComboBox()
                             .Items(new[] { "All", "Weekday", "Weekend" })
                             .SelectedIndex(condition.DayTypeIndex)
                     )
-                    .Width(130);
+                    .Width(120);
                 condition.DayTypeComboBox = dayTypeComboBox;
                 condition.StartTextBox = null;
                 condition.EndTextBox = null;
-                return new StackPanel()
-                    .Horizontal()
-                    .Spacing(8)
-                    .Children(CreateFieldBlock("Day", dayTypeComboBox));
+                return dayTypeComboBox;
             }
             case StrategyConditionType.TimeRange:
             {
-                var startTextBox = StyleInput(new TextBox().Text(condition.StartText).Width(90));
-                var endTextBox = StyleInput(new TextBox().Text(condition.EndText).Width(90));
+                var startTextBox = StyleCompactInput(
+                    new TextBox().Text(condition.StartText).Width(84).Placeholder("Start")
+                );
+                var endTextBox = StyleCompactInput(
+                    new TextBox().Text(condition.EndText).Width(84).Placeholder("End")
+                );
                 condition.StartTextBox = startTextBox;
                 condition.EndTextBox = endTextBox;
                 condition.DayTypeComboBox = null;
                 return new StackPanel()
                     .Horizontal()
-                    .Spacing(8)
+                    .Spacing(6)
                     .Children(
-                        CreateFieldBlock("Start", startTextBox),
-                        CreateFieldBlock("End", endTextBox)
+                        startTextBox,
+                        new Label()
+                            .Text("to")
+                            .FontFamily("Consolas")
+                            .FontSize(10)
+                            .Foreground(TextMuted),
+                        endTextBox
                     );
             }
             case StrategyConditionType.KeyboardMouseIdle:
@@ -928,7 +946,7 @@ internal sealed class SettingsWindow
                 condition.StartTextBox = null;
                 condition.EndTextBox = null;
                 return new Label()
-                    .Text("Triggered when keyboard/mouse is idle")
+                    .Text("Keyboard/mouse idle")
                     .FontFamily("Consolas")
                     .FontSize(10)
                     .Foreground(TextMuted);
@@ -937,7 +955,7 @@ internal sealed class SettingsWindow
                 condition.StartTextBox = null;
                 condition.EndTextBox = null;
                 return new Label()
-                    .Text("Triggered when monitor is off")
+                    .Text("Monitor off")
                     .FontFamily("Consolas")
                     .FontSize(10)
                     .Foreground(TextMuted);
@@ -1360,6 +1378,14 @@ internal sealed class SettingsWindow
         return new StackPanel().Vertical().Spacing(4).Children(CreateFieldLabel(label), control);
     }
 
+    private static StackPanel CreateInlineField(string label, Element control, int labelWidth)
+    {
+        return new StackPanel()
+            .Horizontal()
+            .Spacing(6)
+            .Children(CreateFieldLabel(label).MinWidth(labelWidth), control);
+    }
+
     private static Label CreateFieldLabel(string text)
     {
         return new Label()
@@ -1391,6 +1417,19 @@ internal sealed class SettingsWindow
             .FontFamily("Consolas");
     }
 
+    private static T StyleCompactInput<T>(T control)
+        where T : Control
+    {
+        return control
+            .Height(26)
+            .Padding(6, 3)
+            .Background(SurfaceInput)
+            .Foreground(TextPrimary)
+            .BorderBrush(BorderColor)
+            .BorderThickness(1)
+            .FontFamily("Consolas");
+    }
+
     private static Button CreatePrimaryButton(string text, Action onClick)
     {
         return new Button()
@@ -1406,6 +1445,22 @@ internal sealed class SettingsWindow
             .SemiBold();
     }
 
+    private static Button CreateCompactPrimaryButton(string text, Action onClick)
+    {
+        return new Button()
+            .Content(text)
+            .OnClick(onClick)
+            .Height(26)
+            .Padding(6, 3)
+            .Background(AccentColor)
+            .Foreground(Color.White)
+            .BorderBrush(AccentColor)
+            .BorderThickness(1)
+            .FontFamily("Bahnschrift")
+            .FontSize(11)
+            .SemiBold();
+    }
+
     private static Button CreateDangerButton(string text, Action onClick)
     {
         return new Button()
@@ -1418,6 +1473,22 @@ internal sealed class SettingsWindow
             .BorderBrush(DangerColor)
             .BorderThickness(1)
             .FontFamily("Bahnschrift")
+            .SemiBold();
+    }
+
+    private static Button CreateCompactDangerButton(string text, Action onClick)
+    {
+        return new Button()
+            .Content(text)
+            .OnClick(onClick)
+            .Height(26)
+            .Padding(6, 3)
+            .Background(SurfaceInput)
+            .Foreground(DangerColor)
+            .BorderBrush(DangerColor)
+            .BorderThickness(1)
+            .FontFamily("Bahnschrift")
+            .FontSize(11)
             .SemiBold();
     }
 
@@ -1499,8 +1570,10 @@ internal sealed class SettingsWindow
         return new()
         {
             Now = DateTime.Now,
-            IsKeyboardMouseDetectionEnabled = config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
-            IsMonitorDetectionEnabled = config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
+            IsKeyboardMouseDetectionEnabled =
+                config.Mode is DetectionMode.KeyboardMouse or DetectionMode.Both,
+            IsMonitorDetectionEnabled =
+                config.Mode is DetectionMode.MonitorSleep or DetectionMode.Both,
             IsKeyboardMouseIdle = _previewKeyboardMouseIdleCheckBox?.IsChecked,
             IsMonitorOff = _previewMonitorOffCheckBox?.IsChecked,
         };
@@ -1543,7 +1616,8 @@ internal sealed class SettingsWindow
     private sealed class StrategyGroupEditorState
     {
         internal Guid Id { get; init; } = Guid.NewGuid();
-        internal StrategyConditionGroupOperator Operator { get; set; } = StrategyConditionGroupOperator.All;
+        internal StrategyConditionGroupOperator Operator { get; set; } =
+            StrategyConditionGroupOperator.All;
         internal ComboBox? OperatorComboBox { get; set; }
         internal List<StrategyConditionEditorState> Conditions { get; } = new();
         internal List<StrategyGroupEditorState> Groups { get; } = new();
