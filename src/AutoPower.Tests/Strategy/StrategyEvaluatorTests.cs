@@ -1,3 +1,5 @@
+#nullable enable
+
 using AutoPower.Core.Core.Models;
 using AutoPower.Core.Core;
 using AutoPower.Core.Strategy;
@@ -12,7 +14,7 @@ public class StrategyEvaluatorTests
     private static readonly DateTime TestSaturday = new(2025, 6, 7, 12, 0, 0);
 
     private static AppConfig CreateConfig(
-        IReadOnlyList<StrategyRule>? rules = null,
+        StrategyDecisionNode? decisionTree = null,
         Guid? defaultPlanGuid = null,
         DetectionMode mode = DetectionMode.Both
     )
@@ -23,7 +25,7 @@ public class StrategyEvaluatorTests
             ActivePlanGuid = ActivePlanGuid,
             IdlePlanGuid = IdlePlanGuid,
             DefaultPlanGuid = defaultPlanGuid,
-            Rules = rules?.ToList() ?? new(),
+            DecisionTree = decisionTree,
         };
     }
 
@@ -44,26 +46,21 @@ public class StrategyEvaluatorTests
         };
     }
 
-    private static StrategyRule CreateRule(
-        Guid? id = null,
-        string name = "Test Rule",
-        StrategyConditionGroup? condition = null,
-        Guid? targetPlanGuid = null,
-        int priority = 0,
-        DateTime? createdAt = null,
+    // Helper: Create a leaf node with a plan
+    private static StrategyDecisionNode Leaf(Guid planGuid, bool isEnabled = true)
+    {
+        return new() { PlanGuid = planGuid, IsEnabled = isEnabled };
+    }
+
+    // Helper: Create a branch node with IF-THEN-ELSE
+    private static StrategyDecisionNode Branch(
+        StrategyConditionGroup? condition,
+        StrategyDecisionNode? thenNode = null,
+        StrategyDecisionNode? elseNode = null,
         bool isEnabled = true
     )
     {
-        return new()
-        {
-            Id = id ?? Guid.NewGuid(),
-            Name = name,
-            Condition = condition ?? StrategyConditionGroup.MatchAll(),
-            TargetPlanGuid = targetPlanGuid ?? Guid.NewGuid(),
-            Priority = priority,
-            CreatedAt = createdAt ?? DateTime.UtcNow,
-            IsEnabled = isEnabled,
-        };
+        return new() { If = condition, Then = thenNode, Else = elseNode, IsEnabled = isEnabled };
     }
 
     private static StrategyCondition Day(DayType dayType)
@@ -101,7 +98,7 @@ public class StrategyEvaluatorTests
     }
 
     [Fact]
-    public void NoRules_NoDefault_ReturnsActiveFallback()
+    public void NoTree_NoDefault_ReturnsActiveFallback()
     {
         var result = StrategyEvaluator.Resolve(CreateConfig(), CreateContext(TestMonday));
 
@@ -111,16 +108,16 @@ public class StrategyEvaluatorTests
     }
 
     [Fact]
-    public void DefaultPlan_IsUsedWhenNoRuleMatches()
+    public void DefaultPlan_IsUsedWhenNoTreeMatches()
     {
         var defaultPlanGuid = Guid.NewGuid();
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(condition: Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekend) })),
-        };
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekend) }),
+            thenNode: Leaf(Guid.NewGuid())
+        );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(rules, defaultPlanGuid: defaultPlanGuid),
+            CreateConfig(tree, defaultPlanGuid: defaultPlanGuid),
             CreateContext(TestMonday)
         );
 
@@ -130,38 +127,36 @@ public class StrategyEvaluatorTests
     }
 
     [Fact]
-    public void SingleMatchingRule_ReturnsItsPlan()
+    public void SingleMatchingCondition_ReturnsItsPlan()
     {
         var targetGuid = Guid.NewGuid();
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(
-                name: "Work Hours",
-                targetPlanGuid: targetGuid,
-                condition: Group(
-                    StrategyConditionGroupOperator.All,
-                    new[] { Day(DayType.All), TimeRange(new(9, 0), new(17, 0)) }
-                )
+        var tree = Branch(
+            Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.All), TimeRange(new(9, 0), new(17, 0)) }
             ),
-        };
+            thenNode: Leaf(targetGuid)
+        );
 
-        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
+        var result = StrategyEvaluator.Resolve(CreateConfig(tree), CreateContext(TestMonday));
 
         Assert.Equal(targetGuid, result.PlanGuid);
-        Assert.Equal("Rule: Work Hours", result.Source);
+        Assert.Equal("Decision Tree", result.Source);
         Assert.False(result.IsFallback);
     }
 
     [Fact]
-    public void DisabledRule_IsSkipped()
+    public void DisabledNode_IsSkipped()
     {
+        var targetGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+            thenNode: Leaf(targetGuid),
+            isEnabled: false
+        );
+
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(
-                new List<StrategyRule>
-                {
-                    CreateRule(isEnabled: false, condition: Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) })),
-                }
-            ),
+            CreateConfig(tree),
             CreateContext(TestMonday)
         );
 
@@ -173,37 +168,36 @@ public class StrategyEvaluatorTests
     public void AnyGroup_MatchesWhenOneChildMatches()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.Any,
                 new[] { Day(DayType.Weekend), KeyboardMouseIdle() }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday, isKeyboardMouseIdle: true)
         );
 
         Assert.Equal(targetGuid, result.PlanGuid);
-        Assert.True(result.IsRuntimeDependent);
     }
 
     [Fact]
     public void AllGroup_RequiresAllChildrenToMatch()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.All,
                 new[] { Day(DayType.Weekday), KeyboardMouseIdle() }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday, isKeyboardMouseIdle: true)
         );
 
@@ -214,16 +208,16 @@ public class StrategyEvaluatorTests
     public void NoneGroup_MatchesWhenAllChildrenAreFalse()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.None,
                 new[] { Day(DayType.Weekend), MonitorOff() }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday, isMonitorOff: false)
         );
 
@@ -234,13 +228,13 @@ public class StrategyEvaluatorTests
     public void DisabledDetector_ProducesUnknownAndDoesNotMatchNoneGroup()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(StrategyConditionGroupOperator.None, new[] { MonitorOff() })
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.None, new[] { MonitorOff() }),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.KeyboardMouse),
+            CreateConfig(tree, mode: DetectionMode.KeyboardMouse),
             CreateContext(TestMonday, mode: DetectionMode.KeyboardMouse, isKeyboardMouseIdle: false)
         );
 
@@ -252,16 +246,16 @@ public class StrategyEvaluatorTests
     public void OvernightTimeRange_MatchesAfterMidnight()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.All,
                 new[] { TimeRange(new(22, 0), new(6, 0)) }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(new DateTime(2025, 6, 2, 2, 0, 0))
         );
 
@@ -269,71 +263,104 @@ public class StrategyEvaluatorTests
     }
 
     [Fact]
-    public void HigherPriority_Wins()
+    public void IfThenElse_ConditionFalse_EvaluatesElse()
     {
-        var lowPriorityGuid = Guid.NewGuid();
-        var highPriorityGuid = Guid.NewGuid();
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(
-                targetPlanGuid: lowPriorityGuid,
-                priority: 1,
-                createdAt: DateTime.UtcNow.AddMinutes(-1)
-            ),
-            CreateRule(
-                targetPlanGuid: highPriorityGuid,
-                priority: 10,
-                createdAt: DateTime.UtcNow.AddMinutes(-2)
-            ),
-        };
+        var trueGuid = Guid.NewGuid();
+        var falseGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekend) }),
+            thenNode: Leaf(trueGuid),
+            elseNode: Leaf(falseGuid)
+        );
 
-        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
+        var result = StrategyEvaluator.Resolve(CreateConfig(tree), CreateContext(TestMonday));
 
-        Assert.Equal(highPriorityGuid, result.PlanGuid);
+        Assert.Equal(falseGuid, result.PlanGuid);
     }
 
     [Fact]
-    public void SamePriority_EarlierCreatedAt_Wins()
+    public void IfThenElse_ConditionTrue_EvaluatesThen()
     {
-        var earlierGuid = Guid.NewGuid();
-        var laterGuid = Guid.NewGuid();
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(targetPlanGuid: laterGuid, priority: 5, createdAt: DateTime.UtcNow),
-            CreateRule(
-                targetPlanGuid: earlierGuid,
-                priority: 5,
-                createdAt: DateTime.UtcNow.AddMinutes(-1)
-            ),
-        };
+        var trueGuid = Guid.NewGuid();
+        var falseGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekday) }),
+            thenNode: Leaf(trueGuid),
+            elseNode: Leaf(falseGuid)
+        );
 
-        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
+        var result = StrategyEvaluator.Resolve(CreateConfig(tree), CreateContext(TestMonday));
 
-        Assert.Equal(earlierGuid, result.PlanGuid);
+        Assert.Equal(trueGuid, result.PlanGuid);
     }
 
     [Fact]
-    public void SamePriority_SameCreatedAt_GuidSort_Wins()
+    public void NestedBranch_ThreeLevelsDeep_EvaluatesCorrectly()
     {
-        var earlierGuid = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        var laterGuid = Guid.Parse("00000000-0000-0000-0000-000000000002");
-        var now = new DateTime(2025, 6, 2, 12, 0, 0);
-        var rules = new List<StrategyRule>
-        {
-            CreateRule(id: laterGuid, targetPlanGuid: laterGuid, priority: 5, createdAt: now),
-            CreateRule(id: earlierGuid, targetPlanGuid: earlierGuid, priority: 5, createdAt: now),
-        };
+        var deepestGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekday) }),
+            thenNode: Branch(
+                Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(9, 0), new(17, 0)) }),
+                thenNode: Branch(
+                    Group(StrategyConditionGroupOperator.All, new[] { KeyboardMouseIdle() }),
+                    thenNode: Leaf(deepestGuid)
+                )
+            )
+        );
 
-        var result = StrategyEvaluator.Resolve(CreateConfig(rules), CreateContext(TestMonday));
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
 
-        Assert.Equal(earlierGuid, result.PlanGuid);
+        Assert.Equal(deepestGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void NestedBranch_WithElsePath_EvaluatesCorrectly()
+    {
+        var weekdayIdleGuid = Guid.NewGuid();
+        var weekdayActiveGuid = Guid.NewGuid();
+        var weekendGuid = Guid.NewGuid();
+
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekday) }),
+            thenNode: Branch(
+                Group(StrategyConditionGroupOperator.All, new[] { KeyboardMouseIdle() }),
+                thenNode: Leaf(weekdayIdleGuid),
+                elseNode: Leaf(weekdayActiveGuid)
+            ),
+            elseNode: Leaf(weekendGuid)
+        );
+
+        // Weekday + Idle -> weekdayIdleGuid
+        var result1 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
+        Assert.Equal(weekdayIdleGuid, result1.PlanGuid);
+
+        // Weekday + Not Idle -> weekdayActiveGuid
+        var result2 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isKeyboardMouseIdle: false)
+        );
+        Assert.Equal(weekdayActiveGuid, result2.PlanGuid);
+
+        // Weekend -> weekendGuid
+        var result3 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestSaturday)
+        );
+        Assert.Equal(weekendGuid, result3.PlanGuid);
     }
 
     [Fact]
     public void IdleFallback_UsesIdlePlan_WhenEnabledDetectorReportsIdle()
     {
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(mode: DetectionMode.Both),
+            CreateConfig(),
             CreateContext(TestMonday, isKeyboardMouseIdle: true)
         );
 
@@ -345,13 +372,13 @@ public class StrategyEvaluatorTests
     public void EmptyAllGroup_MatchesTrue()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(StrategyConditionGroupOperator.All)
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday)
         );
 
@@ -362,16 +389,17 @@ public class StrategyEvaluatorTests
     public void EmptyAnyGroup_MatchesFalse()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(StrategyConditionGroupOperator.Any)
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.Any),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday)
         );
 
+        // Any with no conditions is False -> no Then, no Else -> fallback
         Assert.Equal(ActivePlanGuid, result.PlanGuid);
         Assert.True(result.IsFallback);
     }
@@ -380,13 +408,13 @@ public class StrategyEvaluatorTests
     public void EmptyNoneGroup_MatchesTrue()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(StrategyConditionGroupOperator.None)
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.None),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday)
         );
 
@@ -397,17 +425,17 @@ public class StrategyEvaluatorTests
     public void NestedGroups_AnyInsideAll_EvaluatesCorrectly()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.All,
                 new[] { Day(DayType.Weekday) },
                 new[] { Group(StrategyConditionGroupOperator.Any, new[] { KeyboardMouseIdle() }) }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday, isKeyboardMouseIdle: true)
         );
 
@@ -429,17 +457,17 @@ public class StrategyEvaluatorTests
             }
         );
 
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.All,
                 new[] { Day(DayType.All) },
                 new[] { deepGroup }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }),
+            CreateConfig(tree),
             CreateContext(TestMonday, isMonitorOff: false)
         );
 
@@ -450,16 +478,16 @@ public class StrategyEvaluatorTests
     public void UnknownPropagation_AllGroupWithUnknown_BecomesUnknown()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.All,
                 new[] { Day(DayType.All), KeyboardMouseIdle() }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateConfig(tree, mode: DetectionMode.MonitorSleep),
             CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
         );
 
@@ -471,16 +499,16 @@ public class StrategyEvaluatorTests
     public void UnknownPropagation_AnyGroupWithTrueIgnoresUnknown()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.Any,
                 new[] { KeyboardMouseIdle(), Day(DayType.All) }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateConfig(tree, mode: DetectionMode.MonitorSleep),
             CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
         );
 
@@ -491,16 +519,16 @@ public class StrategyEvaluatorTests
     public void NoneGroupWithUnknown_StaysFalseIfAnyTrue()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
+        var tree = Branch(
+            Group(
                 StrategyConditionGroupOperator.None,
                 new[] { Day(DayType.All), KeyboardMouseIdle() }
-            )
+            ),
+            thenNode: Leaf(targetGuid)
         );
 
         var result = StrategyEvaluator.Resolve(
-            CreateConfig(new List<StrategyRule> { rule }, mode: DetectionMode.MonitorSleep),
+            CreateConfig(tree, mode: DetectionMode.MonitorSleep),
             CreateContext(TestMonday, mode: DetectionMode.MonitorSleep, isKeyboardMouseIdle: null)
         );
 
@@ -509,31 +537,261 @@ public class StrategyEvaluatorTests
     }
 
     [Fact]
-    public void OrphanGroupRemoved_EmptyGroupNotMatched()
+    public void NullCondition_AlwaysMatches()
     {
         var targetGuid = Guid.NewGuid();
-        var rule = CreateRule(
-            targetPlanGuid: targetGuid,
-            condition: Group(
-                StrategyConditionGroupOperator.All,
-                null,
-                new[] { Group(StrategyConditionGroupOperator.Any) }
-            )
-        );
-
-        var config = new AppConfig { Rules = new() { rule } };
-        var normalized = ConfigService.Load();
+        var tree = new StrategyDecisionNode
+        {
+            If = null,  // No condition = always match
+            Then = Leaf(targetGuid)
+        };
 
         var result = StrategyEvaluator.Resolve(
-            new AppConfig
-            {
-                ActivePlanGuid = ActivePlanGuid,
-                IdlePlanGuid = IdlePlanGuid,
-                Rules = config.Rules,
-            },
+            CreateConfig(tree),
             CreateContext(TestMonday)
         );
 
-        Assert.False(result.IsFallback && result.PlanGuid == targetGuid);
+        Assert.Equal(targetGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void BranchWithNoThen_ReturnsFallback()
+    {
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+            thenNode: null  // No Then branch
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+    }
+
+    [Fact]
+    public void ConditionFalse_NoElse_ReturnsFallback()
+    {
+        var targetGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.Weekend) }),
+            thenNode: Leaf(targetGuid),
+            elseNode: null  // No Else branch
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday)  // Monday, not weekend
+        );
+
+        Assert.Equal(ActivePlanGuid, result.PlanGuid);
+        Assert.True(result.IsFallback);
+    }
+
+    [Fact]
+    public void DeepNestedTree_FiveLevels_EvaluatesCorrectly()
+    {
+        var finalGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+            thenNode: Branch(
+                Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(0, 0), new(23, 59)) }),
+                thenNode: Branch(
+                    Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+                    thenNode: Branch(
+                        Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(0, 0), new(23, 59)) }),
+                        thenNode: Branch(
+                            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+                            thenNode: Leaf(finalGuid)
+                        )
+                    )
+                )
+            )
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(finalGuid, result.PlanGuid);
+    }
+
+    [Fact]
+    public void ChainedIfElse_MultipleConditions_SelectsCorrectPath()
+    {
+        var morningGuid = Guid.NewGuid();
+        var afternoonGuid = Guid.NewGuid();
+        var eveningGuid = Guid.NewGuid();
+        var defaultGuid = Guid.NewGuid();
+
+        // Decision tree: IF morning -> morningPlan, ELSE IF afternoon -> afternoonPlan, ELSE IF evening -> eveningPlan, ELSE -> defaultPlan
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(6, 0), new(12, 0)) }),
+            thenNode: Leaf(morningGuid),
+            elseNode: Branch(
+                Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(12, 0), new(18, 0)) }),
+                thenNode: Leaf(afternoonGuid),
+                elseNode: Branch(
+                    Group(StrategyConditionGroupOperator.All, new[] { TimeRange(new(18, 0), new(22, 0)) }),
+                    thenNode: Leaf(eveningGuid),
+                    elseNode: Leaf(defaultGuid)
+                )
+            )
+        );
+
+        // Morning (9 AM)
+        var result1 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(new DateTime(2025, 6, 2, 9, 0, 0))
+        );
+        Assert.Equal(morningGuid, result1.PlanGuid);
+
+        // Afternoon (2 PM)
+        var result2 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(new DateTime(2025, 6, 2, 14, 0, 0))
+        );
+        Assert.Equal(afternoonGuid, result2.PlanGuid);
+
+        // Evening (8 PM)
+        var result3 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(new DateTime(2025, 6, 2, 20, 0, 0))
+        );
+        Assert.Equal(eveningGuid, result3.PlanGuid);
+
+        // Night (2 AM)
+        var result4 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(new DateTime(2025, 6, 2, 2, 0, 0))
+        );
+        Assert.Equal(defaultGuid, result4.PlanGuid);
+    }
+
+    [Fact]
+    public void TreeWithMonitorOffCondition_EvaluatesCorrectly()
+    {
+        var monitorOffGuid = Guid.NewGuid();
+        var activeGuid = Guid.NewGuid();
+
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { MonitorOff() }),
+            thenNode: Leaf(monitorOffGuid),
+            elseNode: Leaf(activeGuid)
+        );
+
+        // Monitor off
+        var result1 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isMonitorOff: true)
+        );
+        Assert.Equal(monitorOffGuid, result1.PlanGuid);
+
+        // Monitor on
+        var result2 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isMonitorOff: false)
+        );
+        Assert.Equal(activeGuid, result2.PlanGuid);
+    }
+
+    [Fact]
+    public void ComplexTree_WeekdayWorkHours_EvaluatesCorrectly()
+    {
+        var workPlanGuid = Guid.NewGuid();
+        var idlePlanGuid = Guid.NewGuid();
+        var defaultPlanGuid = Guid.NewGuid();
+
+        // IF weekday AND work hours AND idle -> idlePlan
+        // ELSE IF weekday AND work hours -> workPlan
+        // ELSE -> defaultPlan
+        var tree = Branch(
+            Group(
+                StrategyConditionGroupOperator.All,
+                new[] { Day(DayType.Weekday), TimeRange(new(9, 0), new(17, 0)) }
+            ),
+            thenNode: Branch(
+                Group(StrategyConditionGroupOperator.All, new[] { KeyboardMouseIdle() }),
+                thenNode: Leaf(idlePlanGuid),
+                elseNode: Leaf(workPlanGuid)
+            ),
+            elseNode: Leaf(defaultPlanGuid)
+        );
+
+        // Weekday + Work hours + Idle
+        var result1 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isKeyboardMouseIdle: true)
+        );
+        Assert.Equal(idlePlanGuid, result1.PlanGuid);
+
+        // Weekday + Work hours + Not idle
+        var result2 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestMonday, isKeyboardMouseIdle: false)
+        );
+        Assert.Equal(workPlanGuid, result2.PlanGuid);
+
+        // Weekend
+        var result3 = StrategyEvaluator.Resolve(
+            CreateConfig(tree),
+            CreateContext(TestSaturday)
+        );
+        Assert.Equal(defaultPlanGuid, result3.PlanGuid);
+    }
+
+    [Fact]
+    public void TreeIsNull_FallsBackToDefault()
+    {
+        var defaultPlanGuid = Guid.NewGuid();
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(decisionTree: null, defaultPlanGuid: defaultPlanGuid),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(defaultPlanGuid, result.PlanGuid);
+        Assert.True(result.IsDefault);
+    }
+
+    [Fact]
+    public void TreeReturnsNull_FallsBackToDefault()
+    {
+        var defaultPlanGuid = Guid.NewGuid();
+        // Disabled node returns null from evaluator
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { Day(DayType.All) }),
+            thenNode: Leaf(Guid.NewGuid()),
+            isEnabled: false
+        );
+
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree, defaultPlanGuid: defaultPlanGuid),
+            CreateContext(TestMonday)
+        );
+
+        Assert.Equal(defaultPlanGuid, result.PlanGuid);
+        Assert.True(result.IsDefault);
+    }
+
+    [Fact]
+    public void UnknownCondition_ReturnsNullAndFallsBack()
+    {
+        var defaultPlanGuid = Guid.NewGuid();
+        var tree = Branch(
+            Group(StrategyConditionGroupOperator.All, new[] { KeyboardMouseIdle() }),
+            thenNode: Leaf(Guid.NewGuid()),
+            elseNode: Leaf(Guid.NewGuid())
+        );
+
+        // KeyboardMouseIdle is Unknown because detection is disabled
+        var result = StrategyEvaluator.Resolve(
+            CreateConfig(tree, mode: DetectionMode.MonitorSleep, defaultPlanGuid: defaultPlanGuid),
+            CreateContext(TestMonday, mode: DetectionMode.MonitorSleep)
+        );
+
+        Assert.Equal(defaultPlanGuid, result.PlanGuid);
     }
 }

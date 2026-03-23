@@ -7,18 +7,13 @@ public sealed record StrategyConditionGroup
     public List<StrategyCondition> Conditions { get; init; } = new();
     public List<StrategyConditionGroup> Groups { get; init; } = new();
 
-    public static StrategyConditionGroup MatchAll() => new();
-
-    public static StrategyConditionGroup ForSchedule(DayType dayType, TimeOnly start, TimeOnly end)
+    /// <summary>
+    /// Creates a condition group that matches all conditions (default empty group).
+    /// </summary>
+    public static StrategyConditionGroup MatchAll() => new()
     {
-        return new()
-        {
-            Operator = StrategyConditionGroupOperator.All,
-            Conditions = new()
-            {
-                new() { Type = StrategyConditionType.DayType, DayType = dayType },
-                new() { Type = StrategyConditionType.TimeRange, Start = start, End = end },
-            },
-        };
-    }
+        Operator = StrategyConditionGroupOperator.All,
+        Conditions = new(),
+        Groups = new()
+    };
 }

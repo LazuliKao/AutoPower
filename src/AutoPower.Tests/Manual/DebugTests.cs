@@ -25,15 +25,14 @@ public class DebugTests(ITestOutputHelper logger) : IDisposable
         logger.WriteLine($"  ActivePlanGuid : {config.ActivePlanGuid}");
         logger.WriteLine($"  IdlePlanGuid   : {config.IdlePlanGuid}");
         logger.WriteLine($"  DefaultPlanGuid: {config.DefaultPlanGuid}");
-        logger.WriteLine($"  Rules          : {config.Rules.Count}");
+        logger.WriteLine($"  DecisionTree   : {(config.DecisionTree != null ? "Present" : "None")}");
         logger.WriteLine($"  Override active: {config.Override.IsActive}");
         logger.WriteLine("");
 
         var knownGuids = new HashSet<Guid> { config.ActivePlanGuid, config.IdlePlanGuid };
         if (config.DefaultPlanGuid.HasValue)
             knownGuids.Add(config.DefaultPlanGuid.Value);
-        foreach (var rule in config.Rules)
-            knownGuids.Add(rule.TargetPlanGuid);
+        CollectGuidsFromDecisionTree(config.DecisionTree, knownGuids);
         if (config.Override.PlanGuid.HasValue)
             knownGuids.Add(config.Override.PlanGuid.Value);
 
@@ -119,4 +118,19 @@ public class DebugTests(ITestOutputHelper logger) : IDisposable
     }
 
     public void Dispose() { }
+
+    private static void CollectGuidsFromDecisionTree(StrategyDecisionNode? node, HashSet<Guid> guids)
+    {
+        if (node == null)
+            return;
+
+        if (node.PlanGuid.HasValue)
+            guids.Add(node.PlanGuid.Value);
+
+        if (node.Then is not null)
+            CollectGuidsFromDecisionTree(node.Then, guids);
+
+        if (node.Else is not null)
+            CollectGuidsFromDecisionTree(node.Else, guids);
+    }
 }

@@ -1,3 +1,5 @@
+#nullable enable
+
 using System.Text.Json;
 using AutoPower.Core.Core;
 using AutoPower.Core.Core.Models;
@@ -26,11 +28,11 @@ public class ConfigServiceTests : IDisposable
         {
             var result = ConfigService.Load();
 
-            Assert.Equal(2, result.SchemaVersion);
+            Assert.Equal(3, result.SchemaVersion);
             Assert.Equal(5, result.IdleTimeoutMinutes);
             Assert.Equal(DetectionMode.Both, result.Mode);
             Assert.Null(result.DefaultPlanGuid);
-            Assert.Empty(result.Rules);
+            Assert.Null(result.DecisionTree);
         }
         finally
         {
@@ -50,7 +52,7 @@ public class ConfigServiceTests : IDisposable
             var defaultPlanGuid = Guid.NewGuid();
             var config = new AppConfig
             {
-                SchemaVersion = 2,
+                SchemaVersion = 3,
                 Mode = DetectionMode.KeyboardMouse,
                 IdleTimeoutMinutes = 15,
                 ActivePlanGuid = Guid.NewGuid(),
@@ -63,35 +65,31 @@ public class ConfigServiceTests : IDisposable
                     PlanGuid = Guid.NewGuid(),
                     ExpiresAt = DateTime.UtcNow.AddHours(2),
                 },
-                Rules = new()
+                DecisionTree = new StrategyDecisionNode
                 {
-                    new()
+                    If = new StrategyConditionGroup
                     {
-                        Name = "Test Rule",
-                        TargetPlanGuid = defaultPlanGuid,
-                        Priority = 5,
-                        Condition = new()
+                        Operator = StrategyConditionGroupOperator.All,
+                        Conditions = new()
                         {
-                            Operator = StrategyConditionGroupOperator.All,
-                            Conditions = new()
+                            new() { Type = StrategyConditionType.DayType, DayType = DayType.Weekend },
+                            new() { Type = StrategyConditionType.TimeRange, Start = new(10, 30), End = new(18, 0) },
+                        },
+                        Groups = new()
+                        {
+                            new()
                             {
-                                new() { Type = StrategyConditionType.DayType, DayType = DayType.Weekend },
-                                new() { Type = StrategyConditionType.TimeRange, Start = new(10, 30), End = new(18, 0) },
-                            },
-                            Groups = new()
-                            {
-                                new()
+                                Operator = StrategyConditionGroupOperator.Any,
+                                Conditions = new()
                                 {
-                                    Operator = StrategyConditionGroupOperator.Any,
-                                    Conditions = new()
-                                    {
-                                        new() { Type = StrategyConditionType.KeyboardMouseIdle },
-                                        new() { Type = StrategyConditionType.MonitorOff },
-                                    },
+                                    new() { Type = StrategyConditionType.KeyboardMouseIdle },
+                                    new() { Type = StrategyConditionType.MonitorOff },
                                 },
                             },
                         },
                     },
+                    Then = new StrategyDecisionNode { PlanGuid = Guid.NewGuid() },
+                    Else = new StrategyDecisionNode { PlanGuid = defaultPlanGuid },
                 },
             };
 
@@ -107,12 +105,16 @@ public class ConfigServiceTests : IDisposable
             Assert.Equal(config.AutoStartEnabled, loaded.AutoStartEnabled);
             Assert.Equal(config.Override.IsActive, loaded.Override.IsActive);
             Assert.Equal(config.Override.PlanGuid, loaded.Override.PlanGuid);
-            Assert.Single(loaded.Rules);
-            Assert.Equal(config.Rules[0].Name, loaded.Rules[0].Name);
-            Assert.Equal(config.Rules[0].TargetPlanGuid, loaded.Rules[0].TargetPlanGuid);
-            Assert.Equal(StrategyConditionGroupOperator.All, loaded.Rules[0].Condition.Operator);
-            Assert.Equal(2, loaded.Rules[0].Condition.Conditions.Count);
-            Assert.Single(loaded.Rules[0].Condition.Groups);
+
+            // Verify decision tree
+            Assert.NotNull(loaded.DecisionTree);
+            Assert.Equal(StrategyConditionGroupOperator.All, loaded.DecisionTree.If!.Operator);
+            Assert.Equal(2, loaded.DecisionTree.If.Conditions.Count);
+            Assert.Single(loaded.DecisionTree.If.Groups);
+            Assert.Equal(StrategyConditionGroupOperator.Any, loaded.DecisionTree.If.Groups[0].Operator);
+            Assert.Equal(2, loaded.DecisionTree.If.Groups[0].Conditions.Count);
+            Assert.NotNull(loaded.DecisionTree.Then);
+            Assert.NotNull(loaded.DecisionTree.Else);
         }
         finally
         {
@@ -139,7 +141,7 @@ public class ConfigServiceTests : IDisposable
 
         try
         {
-            var config = new AppConfig { SchemaVersion = 2 };
+            var config = new AppConfig { SchemaVersion = 3 };
             ConfigService.Save(config);
 
             Assert.True(File.Exists(ConfigService.ConfigFilePath));
@@ -190,13 +192,13 @@ public class ConfigServiceTests : IDisposable
         {
             var dir = Path.GetDirectoryName(ConfigService.ConfigFilePath)!;
             Directory.CreateDirectory(dir);
-            var json = JsonSerializer.Serialize(new AppConfig { SchemaVersion = 1 }, AppConfigJsonContext.Default.AppConfig);
+            var json = JsonSerializer.Serialize(new AppConfig { SchemaVersion = 2 }, AppConfigJsonContext.Default.AppConfig);
             File.WriteAllText(ConfigService.ConfigFilePath, json);
 
             var config = ConfigService.Load();
 
-            Assert.Equal(2, config.SchemaVersion);
-            Assert.Empty(config.Rules);
+            Assert.Equal(3, config.SchemaVersion);
+            Assert.Null(config.DecisionTree);
             Assert.Null(config.DefaultPlanGuid);
         }
         finally
@@ -216,14 +218,14 @@ public class ConfigServiceTests : IDisposable
 
         try
         {
-            var config1 = new AppConfig { SchemaVersion = 2, IdleTimeoutMinutes = 5 };
+            var config1 = new AppConfig { SchemaVersion = 3, IdleTimeoutMinutes = 5 };
             ConfigService.Save(config1);
 
-            var config2 = new AppConfig { SchemaVersion = 2, IdleTimeoutMinutes = 30 };
+            var config2 = new AppConfig { SchemaVersion = 3, IdleTimeoutMinutes = 30 };
             ConfigService.Save(config2);
 
             var loaded = ConfigService.Load();
-            Assert.Equal(2, loaded.SchemaVersion);
+            Assert.Equal(3, loaded.SchemaVersion);
             Assert.Equal(30, loaded.IdleTimeoutMinutes);
         }
         finally
@@ -248,31 +250,33 @@ public class ConfigServiceTests : IDisposable
     }
 
     [Fact]
-    public void SaveAndLoad_InvalidDefaultPlanGuid_IsCleared()
+    public void SaveAndLoad_DefaultPlanGuid_IsPreserved()
     {
         if (File.Exists(ConfigService.ConfigFilePath))
             File.Move(ConfigService.ConfigFilePath, _backupPath, true);
 
         try
         {
+            var defaultPlanGuid = Guid.NewGuid();
             var config = new AppConfig
             {
-                DefaultPlanGuid = Guid.NewGuid(),
-                Rules = new()
+                DefaultPlanGuid = defaultPlanGuid,
+                DecisionTree = new StrategyDecisionNode
                 {
-                    new()
+                    If = new StrategyConditionGroup
                     {
-                        Name = "Rule1",
-                        TargetPlanGuid = Guid.NewGuid(),
-                        Priority = 1,
-                    }
-                },
+                        Operator = StrategyConditionGroupOperator.All,
+                        Conditions = new() { new StrategyCondition { Type = StrategyConditionType.DayType, DayType = DayType.All } }
+                    },
+                    Then = new StrategyDecisionNode { PlanGuid = Guid.NewGuid() }
+                }
             };
 
             ConfigService.Save(config);
             var loaded = ConfigService.Load();
 
-            Assert.Null(loaded.DefaultPlanGuid);
+            Assert.NotNull(loaded.DefaultPlanGuid);
+            Assert.Equal(defaultPlanGuid, loaded.DefaultPlanGuid);
         }
         finally
         {
@@ -295,15 +299,15 @@ public class ConfigServiceTests : IDisposable
             var config = new AppConfig
             {
                 DefaultPlanGuid = defaultPlanGuid,
-                Rules = new()
+                DecisionTree = new StrategyDecisionNode
                 {
-                    new()
+                    If = new StrategyConditionGroup
                     {
-                        Name = "Rule1",
-                        TargetPlanGuid = defaultPlanGuid,
-                        Priority = 1,
-                    }
-                },
+                        Operator = StrategyConditionGroupOperator.All,
+                        Conditions = new() { new StrategyCondition { Type = StrategyConditionType.DayType, DayType = DayType.All } }
+                    },
+                    Then = new StrategyDecisionNode { PlanGuid = defaultPlanGuid }
+                }
             };
 
             ConfigService.Save(config);
@@ -321,7 +325,7 @@ public class ConfigServiceTests : IDisposable
     }
 
     [Fact]
-    public void SaveAndLoad_OrphanEmptyGroups_AreRemoved()
+    public void SaveAndLoad_NullDecisionTree_IsPreserved()
     {
         if (File.Exists(ConfigService.ConfigFilePath))
             File.Move(ConfigService.ConfigFilePath, _backupPath, true);
@@ -330,31 +334,155 @@ public class ConfigServiceTests : IDisposable
         {
             var config = new AppConfig
             {
-                Rules = new()
-                {
-                    new()
-                    {
-                        Name = "Rule1",
-                        TargetPlanGuid = Guid.NewGuid(),
-                        Priority = 1,
-                        Condition = new()
-                        {
-                            Operator = StrategyConditionGroupOperator.All,
-                            Conditions = new() { new() { Type = StrategyConditionType.DayType, DayType = DayType.All } },
-                            Groups = new()
-                            {
-                                new() { Operator = StrategyConditionGroupOperator.Any },
-                            },
-                        },
-                    }
-                },
+                DecisionTree = null,
+                DefaultPlanGuid = Guid.NewGuid()
             };
 
             ConfigService.Save(config);
             var loaded = ConfigService.Load();
 
-            Assert.Single(loaded.Rules);
-            Assert.Empty(loaded.Rules[0].Condition.Groups);
+            Assert.Null(loaded.DecisionTree);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_SimpleLeafDecisionTree_IsPreserved()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var planGuid = Guid.NewGuid();
+            var config = new AppConfig
+            {
+                DecisionTree = new StrategyDecisionNode { PlanGuid = planGuid }
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.NotNull(loaded.DecisionTree);
+            Assert.Equal(planGuid, loaded.DecisionTree.PlanGuid);
+            Assert.Null(loaded.DecisionTree.Then);
+            Assert.Null(loaded.DecisionTree.Else);
+            Assert.Null(loaded.DecisionTree.If);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_NestedDecisionTree_IsPreserved()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var leafGuid = Guid.NewGuid();
+            var config = new AppConfig
+            {
+                DecisionTree = new StrategyDecisionNode
+                {
+                    If = new StrategyConditionGroup
+                    {
+                        Operator = StrategyConditionGroupOperator.All,
+                        Conditions = new() { new StrategyCondition { Type = StrategyConditionType.DayType, DayType = DayType.Weekday } }
+                    },
+                    Then = new StrategyDecisionNode
+                    {
+                        If = new StrategyConditionGroup
+                        {
+                            Operator = StrategyConditionGroupOperator.All,
+                            Conditions = new() { new StrategyCondition { Type = StrategyConditionType.TimeRange, Start = new(9, 0), End = new(17, 0) } }
+                        },
+                        Then = new StrategyDecisionNode { PlanGuid = leafGuid }
+                    },
+                    Else = new StrategyDecisionNode { PlanGuid = Guid.NewGuid() }
+                }
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.NotNull(loaded.DecisionTree);
+            Assert.NotNull(loaded.DecisionTree.Then);
+            Assert.NotNull(loaded.DecisionTree.Else);
+            Assert.Equal(leafGuid, loaded.DecisionTree.Then.Then!.PlanGuid);
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void Save_InvalidDecisionTree_ThrowsException()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            // Create an invalid tree where a node has both PlanGuid AND Then
+            var config = new AppConfig
+            {
+                DecisionTree = new StrategyDecisionNode
+                {
+                    PlanGuid = Guid.NewGuid(),
+                    Then = new StrategyDecisionNode { PlanGuid = Guid.NewGuid() }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => ConfigService.Save(config));
+        }
+        finally
+        {
+            if (File.Exists(ConfigService.ConfigFilePath))
+                File.Delete(ConfigService.ConfigFilePath);
+            if (File.Exists(_backupPath))
+                File.Move(_backupPath, ConfigService.ConfigFilePath, true);
+        }
+    }
+
+    [Fact]
+    public void Save_DisabledNode_IsPreserved()
+    {
+        if (File.Exists(ConfigService.ConfigFilePath))
+            File.Move(ConfigService.ConfigFilePath, _backupPath, true);
+
+        try
+        {
+            var config = new AppConfig
+            {
+                DecisionTree = new StrategyDecisionNode
+                {
+                    IsEnabled = false,
+                    PlanGuid = Guid.NewGuid()
+                }
+            };
+
+            ConfigService.Save(config);
+            var loaded = ConfigService.Load();
+
+            Assert.NotNull(loaded.DecisionTree);
+            Assert.False(loaded.DecisionTree.IsEnabled);
         }
         finally
         {

@@ -31,7 +31,7 @@ internal static class StrategyEvaluator
         };
     }
 
-    private enum ConditionMatchResult
+    internal enum ConditionMatchResult
     {
         False,
         True,
@@ -40,27 +40,13 @@ internal static class StrategyEvaluator
 
     internal static StrategyDecision Resolve(AppConfig config, StrategyEvaluationContext context)
     {
-        foreach (var rule in GetOrderedRules(config.Rules))
+        if (config.DecisionTree is not null)
         {
-            if (!rule.IsEnabled)
+            var decision = StrategyDecisionNodeEvaluator.Evaluate(config.DecisionTree, context);
+            if (decision is not null)
             {
-                continue;
+                return decision;
             }
-
-            var evaluation = EvaluateGroup(rule.Condition, context);
-            if (evaluation.Result != ConditionMatchResult.True)
-            {
-                continue;
-            }
-
-            return new()
-            {
-                PlanGuid = rule.TargetPlanGuid,
-                State = AppState.Active,
-                Source = $"Rule: {rule.Name}",
-                RuleId = rule.Id,
-                IsRuntimeDependent = evaluation.IsRuntimeDependent,
-            };
         }
 
         if (config.DefaultPlanGuid.HasValue && config.DefaultPlanGuid.Value != Guid.Empty)
@@ -85,53 +71,6 @@ internal static class StrategyEvaluator
         };
     }
 
-    internal static IReadOnlyList<StrategyRule> GetOrderedRules(IReadOnlyList<StrategyRule> rules)
-    {
-        return rules
-            .Where(rule => rule.TargetPlanGuid != Guid.Empty)
-            .OrderByDescending(rule => rule.Priority)
-            .ThenBy(rule => rule.CreatedAt)
-            .ThenBy(rule => rule.Id.ToString())
-            .ToList();
-    }
-
-    internal static IReadOnlyList<(TimeOnly Start, TimeOnly End)> CollectTimeRanges(
-        IReadOnlyList<StrategyRule> rules
-    )
-    {
-        var ranges = new List<(TimeOnly Start, TimeOnly End)>();
-        foreach (var rule in rules)
-        {
-            CollectTimeRanges(rule.Condition, ranges);
-        }
-
-        return ranges;
-    }
-
-    private static void CollectTimeRanges(
-        StrategyConditionGroup? group,
-        List<(TimeOnly Start, TimeOnly End)> ranges
-    )
-    {
-        if (group is null)
-        {
-            return;
-        }
-
-        foreach (var condition in group.Conditions)
-        {
-            if (condition.Type == StrategyConditionType.TimeRange)
-            {
-                ranges.Add((condition.Start, condition.End));
-            }
-        }
-
-        foreach (var childGroup in group.Groups)
-        {
-            CollectTimeRanges(childGroup, ranges);
-        }
-    }
-
     private static bool ResolveFallbackIdle(DetectionMode mode, StrategyEvaluationContext context)
     {
         var keyboardMouseIdle = mode is DetectionMode.KeyboardMouse or DetectionMode.Both
@@ -142,7 +81,7 @@ internal static class StrategyEvaluator
         return keyboardMouseIdle || monitorIdle;
     }
 
-    private static (ConditionMatchResult Result, bool IsRuntimeDependent) EvaluateGroup(
+    internal static (ConditionMatchResult Result, bool IsRuntimeDependent) EvaluateGroup(
         StrategyConditionGroup? group,
         StrategyEvaluationContext context
     )

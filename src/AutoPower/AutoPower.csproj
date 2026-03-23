@@ -23,6 +23,13 @@
     <Compile Include="Infrastructure\Win32\Shell32.cs" />
     <Compile Include="UI\SettingsWindow.cs" />
     <Compile Include="UI\TrayIcon.cs" />
+    <Compile Include="UI\ViewModels\DecisionTreeViewModel.cs" />
+    <Compile Include="UI\ViewModels\ConditionGroupEditorViewModel.cs" />
+    <Compile Include="UI\Components\ConditionGroupEditor.cs" />
+    <Compile Include="UI\Components\TreeViewEditor.cs" />
+    <Compile Include="UI\Components\CardViewEditor.cs" />
+    <Compile Include="UI\Components\FlowchartView.cs" />
+    <Compile Include="UI\Components\DecisionTreeEditor.cs" />
   </ItemGroup>
 
   <ItemGroup>

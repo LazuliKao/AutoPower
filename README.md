@@ -43,34 +43,96 @@ Top-level fields:
 - `idleTimeoutMinutes`: idle threshold for `Keyboard/Mouse idle`
 - `defaultPlanGuid`: optional plan used when no rule matches
 - `activePlanGuid` / `idlePlanGuid`: final safety fallback plans
-- `rules`: prioritized action rules
+- `decisionTree`: root node of the decision tree (replaces legacy `rules`)
 - `override`: temporary manual override
 
-Each rule targets exactly one power plan and contains a **tree-structured** condition group:
+### Decision Tree Structure (StrategyDecisionNode)
+
+Each node is either a **leaf** (applies a plan) or a **branch** (evaluates IF-THEN-ELSE):
 
 ```json
 {
-  "name": "Work Hours",
-  "targetPlanGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
-  "priority": 10,
-  "isEnabled": true,
-  "condition": {
-    "operator": 0,
-    "conditions": [
-      { "type": 0, "dayType": 1 },
-      { "type": 1, "start": "09:00:00", "end": "17:00:00" }
-    ],
-    "groups": []
+  "decisionTree": {
+    "id": "guid-here",
+    "isEnabled": true,
+    "if": {
+      "operator": 0,
+      "conditions": [
+        { "type": 0, "dayType": 1 },
+        { "type": 1, "start": "09:00:00", "end": "17:00:00" }
+      ],
+      "groups": []
+    },
+    "then": {
+      "id": "guid-here",
+      "isEnabled": true,
+      "planGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+    },
+    "else": {
+      "id": "guid-here",
+      "isEnabled": true,
+      "if": {
+        "operator": 0,
+        "conditions": [{ "type": 2 }],
+        "groups": []
+      },
+      "then": {
+        "id": "guid-here",
+        "planGuid": "a1841308-3541-4fab-bc81-f71556f20b4a"
+      },
+      "else": {
+        "id": "guid-here",
+        "planGuid": "381b4222-f694-41f0-9685-ff5bb260df2e"
+      }
+    }
   }
 }
 ```
 
-### Condition Group Structure (Tree-Based)
+**Node Properties:**
+- `id` (Guid): Unique identifier
+- `isEnabled` (bool): Whether this node is active
+- `if` (ConditionGroup?): Condition to evaluate (null = always matches)
+- `then` (Node?): Branch when condition is true
+- `else` (Node?): Branch when condition is false
+- `planGuid` (Guid?): Power plan for leaf nodes (mutually exclusive with `then`)
 
-**Each `StrategyConditionGroup` is a node in the evaluation tree:**
+### Decision Tree Architecture
+
+**The `decisionTree` is a binary IF-THEN-ELSE tree:**
 
 ```
-Root Group (All / Any / None)
+DecisionTree (Root Node)
+│
+├── IF [Weekday AND 9AM-5PM]
+│   ├── THEN → Leaf: High Performance Plan
+│   └── ELSE
+│       ├── IF [Idle OR Monitor Off]
+│       │   ├── THEN → Leaf: Power Saver Plan
+│       │   └── ELSE → Leaf: Balanced Plan
+│       └── (disabled or no ELSE = fallback)
+│
+└── (disabled nodes are skipped)
+```
+
+**Evaluation Flow:**
+```
+Root
+  │
+  ├─ Evaluate IF condition
+  │   ├─ True → evaluate THEN branch (recurse)
+  │   ├─ False → evaluate ELSE branch (recurse)
+  │   └─ Unknown → return null (fallback)
+  │
+  └─ Leaf node (PlanGuid) → return decision
+```
+
+### Condition Group Structure (Within IF node)
+
+**Each `StrategyConditionGroup` defines the IF condition:**
+
+```
+Condition Group (All / Any / None)
 ├── Leaf Conditions
 │   ├── DayType (weekday/weekend/all)
 │   ├── TimeRange (start - end)
@@ -205,9 +267,17 @@ Enum values:
 Runtime decisions follow this order:
 
 1. Active manual override
-2. First matching rule by `priority desc`, then `createdAt asc`, then `id asc`
+2. Decision tree evaluation (IF-THEN-ELSE traversal)
 3. `defaultPlanGuid`
 4. Final fallback: `idlePlanGuid` when the enabled detectors say idle, otherwise `activePlanGuid`
+
+### Decision Tree Evaluation Rules
+
+- **Disabled nodes** (`isEnabled: false`) return `null` and trigger fallback
+- **Null IF** condition always matches (proceed to THEN)
+- **Unknown result** (runtime condition with no snapshot) returns `null`
+- **Missing THEN/ELSE** branch returns `null` and triggers fallback
+- **Leaf node** with `planGuid` returns the plan decision
 
 ## Data Locations
 

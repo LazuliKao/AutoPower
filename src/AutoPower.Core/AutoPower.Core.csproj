@@ -20,8 +20,9 @@
     <Compile Include="Detection\IdleDetector.cs" />
     <Compile Include="Detection\MonitorStateDetector.cs" />
     <Compile Include="Power\PowerPlanManager.cs" />
-    <Compile Include="Strategy\StrategyEvaluator.cs" />
     <Compile Include="Strategy\StrategyDecision.cs" />
+    <Compile Include="Strategy\StrategyDecisionNodeEvaluator.cs" />
+    <Compile Include="Strategy\StrategyEvaluator.cs" />
     <Compile Include="Strategy\PreviewEngine.cs" />
     <Compile Include="Infrastructure\LoggerService.cs" />
     <Compile Include="Infrastructure\Win32\Kernel32.cs" />

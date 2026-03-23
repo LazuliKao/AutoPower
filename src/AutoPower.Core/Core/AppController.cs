@@ -1,3 +1,5 @@
+#nullable enable
+
 using AutoPower.Core.Core.Models;
 using AutoPower.Core.Detection;
 using AutoPower.Core.Infrastructure;
@@ -242,30 +244,12 @@ internal sealed class AppController : IDisposable
                 }
                 else
                 {
-                    var context = StrategyEvaluator.BuildLiveContext(
-                        Config,
-                        DateTime.Now,
-                        _isKeyboardMouseIdle,
-                        _isMonitorOff
-                    );
-                    var decision = StrategyEvaluator.Resolve(Config, context);
-                    targetPlanGuid = decision.PlanGuid;
-                    newState = decision.State;
-                    source = decision.Source;
+                    (targetPlanGuid, newState, source) = ResolvePlanFromTreeOrFallback();
                 }
             }
             else
             {
-                var context = StrategyEvaluator.BuildLiveContext(
-                    Config,
-                    DateTime.Now,
-                    _isKeyboardMouseIdle,
-                    _isMonitorOff
-                );
-                var decision = StrategyEvaluator.Resolve(Config, context);
-                targetPlanGuid = decision.PlanGuid;
-                newState = decision.State;
-                source = decision.Source;
+                (targetPlanGuid, newState, source) = ResolvePlanFromTreeOrFallback();
             }
 
             if (CurrentState != newState)
@@ -294,6 +278,13 @@ internal sealed class AppController : IDisposable
     private StrategyEvaluationContext BuildEvaluationContext(DateTime now)
     {
         return StrategyEvaluator.BuildLiveContext(Config, now, _isKeyboardMouseIdle, _isMonitorOff);
+    }
+
+    private (Guid PlanGuid, AppState State, string Source) ResolvePlanFromTreeOrFallback()
+    {
+        var context = BuildEvaluationContext(DateTime.Now);
+        var decision = StrategyEvaluator.Resolve(Config, context);
+        return (decision.PlanGuid, decision.State, decision.Source);
     }
 
     public void Dispose()

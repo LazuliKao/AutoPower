@@ -30,6 +30,7 @@
     <Compile Include="Manual\DebugTests.cs" />
     <Compile Include="Power\PowerPlanManagerTests.cs" />
     <Compile Include="Strategy\PreviewEngineTests.cs" />
+    <Compile Include="Strategy\StrategyDecisionNodeEvaluatorTests.cs" />
     <Compile Include="Strategy\StrategyEvaluatorTests.cs" />
   </ItemGroup>
 

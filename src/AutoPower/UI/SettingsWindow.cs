@@ -5,6 +5,7 @@ using Aprillz.MewUI.Diagnostics;
 using AutoPower.Core.Core.Models;
 using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Strategy;
+using AutoPower.UI.Components;
 
 namespace AutoPower.UI;
 
@@ -35,8 +36,7 @@ internal sealed class SettingsWindow
     private ComboBox? _defaultPlanComboBox;
     private CheckBox? _autoStartCheckBox;
 
-    private List<StrategyRule> _rules = new();
-    private readonly List<RuleEditorControls> _ruleEditors = new();
+    private DecisionTreeEditor? _decisionTreeEditor;
 
     private Label? _rulesSummaryLabel;
     private Border? _rulesContainer;
@@ -62,7 +62,6 @@ internal sealed class SettingsWindow
 
         _config = config;
         _plans = plans;
-        _rules = new(config.Rules);
 
         _window = new Window()
             .Padding(0)
@@ -280,21 +279,15 @@ internal sealed class SettingsWindow
 
     private Element CreateScheduleTabContent()
     {
-        var addButton = CreatePrimaryButton("Add Rule", OnAddRuleClicked).Width(112);
+        _decisionTreeEditor = new DecisionTreeEditor();
+        _decisionTreeEditor.LoadTree(_config.DecisionTree);
+        _decisionTreeEditor.TreeChanged += RefreshPreviewTab;
 
         _rulesSummaryLabel = new Label()
-            .Text(FormatRulesSummary())
+            .Text(FormatDecisionTreeSummary())
             .FontFamily("Consolas")
             .FontSize(11)
             .Foreground(TextMuted);
-
-        _rulesContainer = new Border()
-            .Background(SurfaceInput)
-            .BorderBrush(BorderColor)
-            .BorderThickness(1)
-            .CornerRadius(8)
-            .Padding(8)
-            .Child(BuildRulesPanel());
 
         return new StackPanel()
             .Vertical()
@@ -302,671 +295,35 @@ internal sealed class SettingsWindow
             .Padding(8)
             .Children(
                 CreateSectionCard(
-                    "Strategy Rules",
-                    "Each rule selects a plan and evaluates a condition group. UI currently edits one condition group per rule with time, day, keyboard/mouse idle, and monitor-off leaves.",
+                    "Decision Tree Strategy",
+                    "IF-THEN-ELSE decision tree for power plan selection. Each node evaluates a condition group and branches accordingly.",
                     _rulesSummaryLabel,
-                    _rulesContainer,
-                    new StackPanel().Horizontal().Spacing(8).Children(addButton)
+                    _decisionTreeEditor
                 )
             );
     }
 
-    private StackPanel BuildRulesPanel()
+    private string FormatDecisionTreeSummary()
     {
-        _ruleEditors.Clear();
-        var elements = new List<Element>();
-        var planNames = new List<string>();
-        var planGuids = new List<Guid>();
-
-        foreach (var plan in _plans)
-        {
-            planNames.Add(plan.Name);
-            planGuids.Add(plan.Guid);
-        }
-
-        for (var i = 0; i < _rules.Count; i++)
-        {
-            var rule = _rules[i];
-            var enabledCheckBox = new CheckBox()
-                .Text("Enabled")
-                .IsChecked(rule.IsEnabled)
-                .Foreground(TextPrimary)
-                .FontFamily("Consolas");
-            var nameTextBox = StyleCompactInput(
-                new TextBox().Text(rule.Name).Placeholder("Rule name").MinWidth(220)
-            );
-            var priorityTextBox = StyleCompactInput(
-                new TextBox().Text(rule.Priority.ToString()).Width(72).Placeholder("Priority")
-            );
-            var planComboBox = StyleCompactInput(
-                new ComboBox()
-                    .Items(planNames.ToArray())
-                    .SelectedIndex(GetPlanIndex(planGuids, rule.TargetPlanGuid))
-                    .MinWidth(220)
-            );
-
-            var editor = new RuleEditorControls(
-                rule,
-                enabledCheckBox,
-                nameTextBox,
-                priorityTextBox,
-                planComboBox,
-                CreateGroupStateFromModel(rule.Condition)
-            );
-            _ruleEditors.Add(editor);
-
-            var removeButton = CreateCompactDangerButton("Del", () => OnRemoveRuleClicked(rule.Id))
-                .Width(42);
-
-            var headerLeft = new StackPanel()
-                .Horizontal()
-                .Spacing(6)
-                .Children(
-                    new Label()
-                        .Text($"Rule {i + 1}")
-                        .Bold()
-                        .FontFamily("Bahnschrift")
-                        .Foreground(TextPrimary),
-                    new Label()
-                        .Text($"ID {rule.Id.ToString()[..8]}")
-                        .FontSize(11)
-                        .FontFamily("Consolas")
-                        .Foreground(TextMuted)
-                );
-
-            var headerRow = new StackPanel()
-                .Vertical()
-                .Spacing(4)
-                .Children(
-                    headerLeft,
-                    new StackPanel().Horizontal().Spacing(6).Children(enabledCheckBox, removeButton)
-                );
-
-            var detailsRow = new StackPanel()
-                .Horizontal()
-                .Spacing(8)
-                .Children(
-                    CreateInlineField("Name", nameTextBox, 48),
-                    CreateInlineField("Priority", priorityTextBox, 58)
-                );
-
-            var planRow = new StackPanel()
-                .Horizontal()
-                .Spacing(8)
-                .Children(CreateInlineField("Target plan", planComboBox, 80));
-
-            var treeEditor = BuildGroupPanel(editor, editor.RootGroupState, 0, isRoot: true);
-
-            var rulePanel = new Border()
-                .Background(SurfaceCard)
-                .BorderBrush(BorderColor)
-                .BorderThickness(1)
-                .CornerRadius(8)
-                .Padding(8)
-                .Child(
-                    new StackPanel()
-                        .Vertical()
-                        .Spacing(6)
-                        .Children(headerRow, CreateDivider(), detailsRow, planRow, treeEditor)
-                );
-
-            elements.Add(rulePanel);
-        }
-
-        if (_rules.Count == 0)
-        {
-            elements.Add(
-                new Border()
-                    .Background(SurfaceCard)
-                    .BorderBrush(BorderColor)
-                    .BorderThickness(1)
-                    .CornerRadius(8)
-                    .Padding(14)
-                    .Child(
-                        new Label()
-                            .Text(
-                                "No rules defined yet. Click 'Add Rule' to create your first action rule."
-                            )
-                            .FontFamily("Consolas")
-                            .Foreground(TextMuted)
-                    )
-            );
-        }
-
-        return new StackPanel().Vertical().Spacing(8).Children(elements.ToArray());
+        var nodeCount = CountNodes(_config.DecisionTree);
+        return nodeCount == 1 ? "1 node configured" : $"{nodeCount} nodes configured";
     }
 
-    private void OnAddRuleClicked()
+    private static int CountNodes(StrategyDecisionNode? node)
     {
-        SyncRulesFromEditors();
+        if (node is null)
+            return 0;
 
-        var newRule = new StrategyRule
-        {
-            Name = $"Rule {_rules.Count + 1}",
-            Condition = StrategyConditionGroup.ForSchedule(DayType.All, new(9, 0), new(17, 0)),
-            TargetPlanGuid = _config.DefaultPlanGuid ?? _config.ActivePlanGuid,
-            Priority = _rules.Count + 1,
-            IsEnabled = true,
-        };
+        var count = 1;
+        if (node.Then is not null)
+            count += CountNodes(node.Then);
+        if (node.Else is not null)
+            count += CountNodes(node.Else);
 
-        _rules.Add(newRule);
-        RebuildScheduleRulesPanel();
+        return count;
     }
 
-    private void OnRemoveRuleClicked(Guid ruleId)
-    {
-        SyncRulesFromEditors();
-        _rules.RemoveAll(rule => rule.Id == ruleId);
-        RebuildScheduleRulesPanel();
-    }
 
-    private void RebuildScheduleRulesPanel()
-    {
-        if (_rulesContainer is null)
-            return;
-
-        _rulesContainer.Child = BuildRulesPanel();
-        _rulesSummaryLabel?.Text(FormatRulesSummary());
-        RefreshPreviewTab();
-    }
-
-    private string FormatRulesSummary()
-    {
-        return _rules.Count == 1 ? "1 rule configured" : $"{_rules.Count} rules configured";
-    }
-
-    private void SyncRulesFromEditors()
-    {
-        if (_ruleEditors.Count == 0)
-            return;
-
-        var updatedRules = new List<StrategyRule>(_ruleEditors.Count);
-        foreach (var editor in _ruleEditors)
-        {
-            var source = editor.SourceRule;
-            var selectedPlanIndex = editor.PlanComboBox.SelectedIndex;
-            var selectedPlanGuid = source.TargetPlanGuid;
-            if (selectedPlanIndex >= 0 && selectedPlanIndex < _plans.Count)
-            {
-                selectedPlanGuid = _plans[selectedPlanIndex].Guid;
-            }
-
-            var ruleName = string.IsNullOrWhiteSpace(editor.NameTextBox.Text)
-                ? source.Name
-                : editor.NameTextBox.Text.Trim();
-            var priority = source.Priority;
-            if (int.TryParse(editor.PriorityTextBox.Text, out var parsedPriority))
-            {
-                priority = Math.Max(0, parsedPriority);
-            }
-
-            var conditionGroup = BuildConditionGroup(editor.RootGroupState);
-
-            updatedRules.Add(
-                source with
-                {
-                    Name = ruleName,
-                    Priority = priority,
-                    Condition = conditionGroup,
-                    TargetPlanGuid = selectedPlanGuid,
-                    IsEnabled = editor.EnabledCheckBox.IsChecked ?? source.IsEnabled,
-                }
-            );
-        }
-
-        _rules = updatedRules;
-    }
-
-    private static TimeOnly ParseTimeOrFallback(string? value, TimeOnly fallback)
-    {
-        if (!string.IsNullOrWhiteSpace(value) && TimeOnly.TryParse(value, out var parsed))
-        {
-            return parsed;
-        }
-
-        return fallback;
-    }
-
-    private static StrategyGroupEditorState CreateGroupStateFromModel(StrategyConditionGroup group)
-    {
-        var state = new StrategyGroupEditorState { Id = group.Id, Operator = group.Operator };
-
-        foreach (var condition in group.Conditions)
-        {
-            state.Conditions.Add(CreateConditionStateFromModel(condition));
-        }
-
-        foreach (var child in group.Groups)
-        {
-            state.Groups.Add(CreateGroupStateFromModel(child));
-        }
-
-        return state;
-    }
-
-    private static StrategyConditionEditorState CreateConditionStateFromModel(
-        StrategyCondition condition
-    )
-    {
-        var state = new StrategyConditionEditorState
-        {
-            Id = condition.Id,
-            TypeIndex = (int)condition.Type,
-        };
-
-        if (condition.Type == StrategyConditionType.DayType)
-        {
-            state.DayTypeIndex = condition.DayType switch
-            {
-                DayType.Weekday => 1,
-                DayType.Weekend => 2,
-                _ => 0,
-            };
-        }
-        else if (condition.Type == StrategyConditionType.TimeRange)
-        {
-            state.StartText = condition.Start.ToString("HH:mm");
-            state.EndText = condition.End.ToString("HH:mm");
-        }
-
-        return state;
-    }
-
-    private static StrategyConditionGroup BuildConditionGroup(StrategyGroupEditorState state)
-    {
-        var operatorValue = GetOperatorFromCombo(state.OperatorComboBox, state.Operator);
-        state.Operator = operatorValue;
-
-        var conditions = new List<StrategyCondition>();
-        foreach (var conditionState in state.Conditions)
-        {
-            conditions.Add(BuildCondition(conditionState));
-        }
-
-        var groups = new List<StrategyConditionGroup>();
-        foreach (var child in state.Groups)
-        {
-            groups.Add(BuildConditionGroup(child));
-        }
-
-        return new StrategyConditionGroup
-        {
-            Id = state.Id,
-            Operator = operatorValue,
-            Conditions = conditions,
-            Groups = groups,
-        };
-    }
-
-    private static StrategyCondition BuildCondition(StrategyConditionEditorState state)
-    {
-        var typeIndex = state.TypeComboBox?.SelectedIndex ?? state.TypeIndex;
-        var conditionType = GetConditionType(typeIndex);
-        state.TypeIndex = (int)conditionType;
-
-        return conditionType switch
-        {
-            StrategyConditionType.DayType => BuildDayTypeCondition(state),
-            StrategyConditionType.TimeRange => BuildTimeRangeCondition(state),
-            StrategyConditionType.KeyboardMouseIdle => new StrategyCondition
-            {
-                Id = state.Id,
-                Type = StrategyConditionType.KeyboardMouseIdle,
-            },
-            StrategyConditionType.MonitorOff => new StrategyCondition
-            {
-                Id = state.Id,
-                Type = StrategyConditionType.MonitorOff,
-            },
-            _ => new StrategyCondition
-            {
-                Id = state.Id,
-                Type = StrategyConditionType.DayType,
-                DayType = DayType.All,
-            },
-        };
-    }
-
-    private static StrategyConditionType GetConditionType(int index)
-    {
-        return index switch
-        {
-            1 => StrategyConditionType.TimeRange,
-            2 => StrategyConditionType.KeyboardMouseIdle,
-            3 => StrategyConditionType.MonitorOff,
-            _ => StrategyConditionType.DayType,
-        };
-    }
-
-    private static StrategyConditionGroupOperator GetOperatorFromCombo(
-        ComboBox? comboBox,
-        StrategyConditionGroupOperator fallback
-    )
-    {
-        var index = comboBox?.SelectedIndex ?? (int)fallback;
-        return index switch
-        {
-            1 => StrategyConditionGroupOperator.Any,
-            2 => StrategyConditionGroupOperator.None,
-            _ => StrategyConditionGroupOperator.All,
-        };
-    }
-
-    private static DayType GetDayTypeFromCombo(ComboBox? comboBox, int fallbackIndex)
-    {
-        var index = comboBox?.SelectedIndex ?? fallbackIndex;
-        return index switch
-        {
-            1 => DayType.Weekday,
-            2 => DayType.Weekend,
-            _ => DayType.All,
-        };
-    }
-
-    private static StrategyCondition BuildDayTypeCondition(StrategyConditionEditorState state)
-    {
-        var dayTypeIndex = state.DayTypeComboBox?.SelectedIndex ?? state.DayTypeIndex;
-        state.DayTypeIndex = dayTypeIndex;
-        return new StrategyCondition
-        {
-            Id = state.Id,
-            Type = StrategyConditionType.DayType,
-            DayType = GetDayTypeFromCombo(state.DayTypeComboBox, dayTypeIndex),
-        };
-    }
-
-    private static StrategyCondition BuildTimeRangeCondition(StrategyConditionEditorState state)
-    {
-        var startText = state.StartTextBox?.Text ?? state.StartText;
-        var endText = state.EndTextBox?.Text ?? state.EndText;
-        state.StartText = startText;
-        state.EndText = endText;
-        return new StrategyCondition
-        {
-            Id = state.Id,
-            Type = StrategyConditionType.TimeRange,
-            Start = ParseTimeOrFallback(startText, new TimeOnly(9, 0)),
-            End = ParseTimeOrFallback(endText, new TimeOnly(17, 0)),
-        };
-    }
-
-    private static bool RemoveGroup(StrategyGroupEditorState group, Guid groupId)
-    {
-        var removed = group.Groups.RemoveAll(child => child.Id == groupId) > 0;
-        if (removed)
-        {
-            return true;
-        }
-
-        foreach (var child in group.Groups)
-        {
-            if (RemoveGroup(child, groupId))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private Element BuildGroupPanel(
-        RuleEditorControls editor,
-        StrategyGroupEditorState group,
-        int depth,
-        bool isRoot
-    )
-    {
-        var operatorComboBox = StyleCompactInput(
-                new ComboBox()
-                    .Items(new[] { "All", "Any", "None" })
-                    .SelectedIndex((int)group.Operator)
-            )
-            .Width(92);
-        group.OperatorComboBox = operatorComboBox;
-
-        var addGroupButton = CreateCompactPrimaryButton(
-                "+ Group",
-                () =>
-                {
-                    SyncRulesFromEditors();
-                    group.Groups.Add(new StrategyGroupEditorState());
-                    RebuildScheduleRulesPanel();
-                }
-            )
-            .Width(56);
-
-        var addConditionButton = CreateCompactPrimaryButton(
-                "+ Cond",
-                () =>
-                {
-                    SyncRulesFromEditors();
-                    group.Conditions.Add(new StrategyConditionEditorState { TypeIndex = 0 });
-                    RebuildScheduleRulesPanel();
-                }
-            )
-            .Width(56);
-
-        var headerLeft = new StackPanel()
-            .Horizontal()
-            .Spacing(6)
-            .Children(
-                new Label()
-                    .Text(isRoot ? "Root Group" : "Group")
-                    .FontFamily("Bahnschrift")
-                    .SemiBold()
-                    .Foreground(TextPrimary),
-                new Label()
-                    .Text($"ID {group.Id.ToString()[..8]}")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted)
-            );
-
-        var headerActions = new StackPanel()
-            .Horizontal()
-            .Spacing(6)
-            .Children(operatorComboBox, addConditionButton, addGroupButton);
-
-        if (!isRoot)
-        {
-            headerActions.Children(
-                CreateCompactDangerButton(
-                        "Del",
-                        () =>
-                        {
-                            SyncRulesFromEditors();
-                            RemoveGroup(editor.RootGroupState, group.Id);
-                            RebuildScheduleRulesPanel();
-                        }
-                    )
-                    .Width(42)
-            );
-        }
-
-        var headerRow = new StackPanel()
-            .Vertical()
-            .Spacing(4)
-            .Children(
-                headerLeft,
-                new Label()
-                    .Text("Operator")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted),
-                headerActions
-            );
-
-        var rows = new List<Element> { headerRow };
-
-        foreach (var condition in group.Conditions)
-        {
-            rows.Add(BuildConditionRow(editor, group, condition, depth + 1));
-        }
-
-        foreach (var child in group.Groups)
-        {
-            rows.Add(BuildGroupPanel(editor, child, depth + 1, isRoot: false));
-        }
-
-        if (group.Conditions.Count == 0 && group.Groups.Count == 0)
-        {
-            rows.Add(
-                new Label()
-                    .Text("No conditions yet. Add a leaf or nested group.")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted)
-            );
-        }
-
-        var indent = depth * 12;
-        var groupPanel = new Border()
-            .Background(depth == 0 ? SurfaceCard : SurfacePanel)
-            .BorderBrush(depth == 0 ? BorderColor : DividerColor)
-            .BorderThickness(1)
-            .CornerRadius(depth == 0 ? 8 : 6)
-            .Padding(depth == 0 ? 10 : 8)
-            .Child(new StackPanel().Vertical().Spacing(8).Children(rows.ToArray()));
-
-        if (depth > 0)
-        {
-            groupPanel.Margin(indent, 0, 0, 0);
-        }
-
-        return groupPanel;
-    }
-
-    private Element BuildConditionRow(
-        RuleEditorControls editor,
-        StrategyGroupEditorState group,
-        StrategyConditionEditorState condition,
-        int depth
-    )
-    {
-        var typeComboBox = StyleCompactInput(
-                new ComboBox()
-                    .Items(new[] { "DayType", "TimeRange", "KeyboardMouseIdle", "MonitorOff" })
-                    .SelectedIndex(condition.TypeIndex)
-            )
-            .Width(136);
-        condition.TypeComboBox = typeComboBox;
-
-        var inputs = BuildConditionInputs(condition);
-
-        var applyTypeButton = CreateCompactPrimaryButton(
-                "Apply",
-                () =>
-                {
-                    SyncRulesFromEditors();
-                    RebuildScheduleRulesPanel();
-                }
-            )
-            .Width(52);
-
-        var removeButton = CreateCompactDangerButton(
-                "Del",
-                () =>
-                {
-                    SyncRulesFromEditors();
-                    group.Conditions.RemoveAll(item => item.Id == condition.Id);
-                    RebuildScheduleRulesPanel();
-                }
-            )
-            .Width(42);
-
-        var row = new StackPanel()
-            .Horizontal()
-            .Spacing(6)
-            .Children(typeComboBox, inputs, applyTypeButton, removeButton);
-
-        var rowCard = new Border()
-            .Background(SurfaceInput)
-            .BorderBrush(BorderColor)
-            .BorderThickness(1)
-            .CornerRadius(6)
-            .Padding(6)
-            .Child(row);
-
-        if (depth > 0)
-        {
-            rowCard.Margin(depth * 12, 0, 0, 0);
-        }
-
-        return rowCard;
-    }
-
-    private Element BuildConditionInputs(StrategyConditionEditorState condition)
-    {
-        var conditionType = GetConditionType(
-            condition.TypeComboBox?.SelectedIndex ?? condition.TypeIndex
-        );
-        condition.TypeIndex = (int)conditionType;
-
-        switch (conditionType)
-        {
-            case StrategyConditionType.DayType:
-            {
-                var dayTypeComboBox = StyleCompactInput(
-                        new ComboBox()
-                            .Items(new[] { "All", "Weekday", "Weekend" })
-                            .SelectedIndex(condition.DayTypeIndex)
-                    )
-                    .Width(120);
-                condition.DayTypeComboBox = dayTypeComboBox;
-                condition.StartTextBox = null;
-                condition.EndTextBox = null;
-                return dayTypeComboBox;
-            }
-            case StrategyConditionType.TimeRange:
-            {
-                var startTextBox = StyleCompactInput(
-                    new TextBox().Text(condition.StartText).Width(84).Placeholder("Start")
-                );
-                var endTextBox = StyleCompactInput(
-                    new TextBox().Text(condition.EndText).Width(84).Placeholder("End")
-                );
-                condition.StartTextBox = startTextBox;
-                condition.EndTextBox = endTextBox;
-                condition.DayTypeComboBox = null;
-                return new StackPanel()
-                    .Horizontal()
-                    .Spacing(6)
-                    .Children(
-                        startTextBox,
-                        new Label()
-                            .Text("to")
-                            .FontFamily("Consolas")
-                            .FontSize(10)
-                            .Foreground(TextMuted),
-                        endTextBox
-                    );
-            }
-            case StrategyConditionType.KeyboardMouseIdle:
-                condition.DayTypeComboBox = null;
-                condition.StartTextBox = null;
-                condition.EndTextBox = null;
-                return new Label()
-                    .Text("Keyboard/mouse idle")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted);
-            case StrategyConditionType.MonitorOff:
-                condition.DayTypeComboBox = null;
-                condition.StartTextBox = null;
-                condition.EndTextBox = null;
-                return new Label()
-                    .Text("Monitor off")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted);
-            default:
-                return new Label()
-                    .Text("Unsupported condition")
-                    .FontFamily("Consolas")
-                    .FontSize(10)
-                    .Foreground(TextMuted);
-        }
-    }
 
     #endregion
 
@@ -1526,8 +883,6 @@ internal sealed class SettingsWindow
 
     private AppConfig BuildConfigFromEditors()
     {
-        SyncRulesFromEditors();
-
         var mode = DetectionMode.Both;
         if (_modeKeyboardMouse?.IsChecked == true)
             mode = DetectionMode.KeyboardMouse;
@@ -1560,7 +915,7 @@ internal sealed class SettingsWindow
             ActivePlanGuid = activePlanGuid,
             IdlePlanGuid = idlePlanGuid,
             DefaultPlanGuid = GetOptionalPlanGuid(_defaultPlanComboBox),
-            Rules = new(_rules),
+            DecisionTree = _decisionTreeEditor?.ViewModel.Root.Value,
             AutoStartEnabled = _autoStartCheckBox?.IsChecked ?? false,
         };
     }
@@ -1586,55 +941,7 @@ internal sealed class SettingsWindow
         _window?.Close();
     }
 
-    private sealed class RuleEditorControls
-    {
-        internal RuleEditorControls(
-            StrategyRule sourceRule,
-            CheckBox enabledCheckBox,
-            TextBox nameTextBox,
-            TextBox priorityTextBox,
-            ComboBox planComboBox,
-            StrategyGroupEditorState rootGroupState
-        )
-        {
-            SourceRule = sourceRule;
-            EnabledCheckBox = enabledCheckBox;
-            NameTextBox = nameTextBox;
-            PriorityTextBox = priorityTextBox;
-            PlanComboBox = planComboBox;
-            RootGroupState = rootGroupState;
-        }
 
-        internal StrategyRule SourceRule { get; }
-        internal CheckBox EnabledCheckBox { get; }
-        internal TextBox NameTextBox { get; }
-        internal TextBox PriorityTextBox { get; }
-        internal ComboBox PlanComboBox { get; }
-        internal StrategyGroupEditorState RootGroupState { get; }
-    }
-
-    private sealed class StrategyGroupEditorState
-    {
-        internal Guid Id { get; init; } = Guid.NewGuid();
-        internal StrategyConditionGroupOperator Operator { get; set; } =
-            StrategyConditionGroupOperator.All;
-        internal ComboBox? OperatorComboBox { get; set; }
-        internal List<StrategyConditionEditorState> Conditions { get; } = new();
-        internal List<StrategyGroupEditorState> Groups { get; } = new();
-    }
-
-    private sealed class StrategyConditionEditorState
-    {
-        internal Guid Id { get; init; } = Guid.NewGuid();
-        internal int TypeIndex { get; set; }
-        internal ComboBox? TypeComboBox { get; set; }
-        internal int DayTypeIndex { get; set; }
-        internal ComboBox? DayTypeComboBox { get; set; }
-        internal TextBox? StartTextBox { get; set; }
-        internal TextBox? EndTextBox { get; set; }
-        internal string StartText { get; set; } = new TimeOnly(9, 0).ToString("HH:mm");
-        internal string EndText { get; set; } = new TimeOnly(17, 0).ToString("HH:mm");
-    }
 
     #endregion
 }

@@ -1,3 +1,5 @@
+#nullable enable
+
 using AutoPower.Core.Core.Models;
 
 namespace AutoPower.Core.Strategy;
@@ -66,17 +68,47 @@ public static class PreviewEngine
         string? lastSource = null;
         var fromLocal = from.ToLocalTime();
         var untilLocal = until.ToLocalTime();
-        var checkpoints = CollectCheckPoints(config.Rules, fromLocal, untilLocal);
+        var checkpoints = CollectCheckPoints(fromLocal, untilLocal);
 
         foreach (var checkpointLocal in checkpoints)
         {
-            var decision = StrategyEvaluator.Resolve(
-                config,
-                baseSnapshot with
+            StrategyDecision? decision = null;
+
+            if (config.DecisionTree is not null)
+            {
+                decision = StrategyDecisionNodeEvaluator.Evaluate(
+                    config.DecisionTree,
+                    baseSnapshot with
+                    {
+                        Now = checkpointLocal,
+                    }
+                );
+            }
+
+            if (decision is null && config.DefaultPlanGuid.HasValue)
+            {
+                decision = new StrategyDecision
                 {
-                    Now = checkpointLocal,
-                }
-            );
+                    PlanGuid = config.DefaultPlanGuid.Value,
+                    Source = "Default Plan",
+                    IsRuntimeDependent = false
+                };
+            }
+
+            if (decision is null)
+            {
+                var contextAtCheckpoint = baseSnapshot with { Now = checkpointLocal };
+                var planGuid = (contextAtCheckpoint.IsKeyboardMouseIdle == true)
+                    ? config.IdlePlanGuid
+                    : config.ActivePlanGuid;
+                decision = new StrategyDecision
+                {
+                    PlanGuid = planGuid,
+                    Source = "Fallback",
+                    IsRuntimeDependent = false
+                };
+            }
+
             var source = decision.IsRuntimeDependent ? $"{decision.Source} (runtime snapshot)" : decision.Source;
 
             if (decision.PlanGuid != lastPlanGuid || source != lastSource)
@@ -103,14 +135,12 @@ public static class PreviewEngine
     }
 
     private static List<DateTime> CollectCheckPoints(
-        IReadOnlyList<StrategyRule> rules,
         DateTime from,
         DateTime until
     )
     {
         var points = new SortedSet<DateTime> { from };
         var day = from.Date;
-        var ranges = StrategyEvaluator.CollectTimeRanges(rules);
 
         while (day <= until.Date)
         {
@@ -121,25 +151,6 @@ public static class PreviewEngine
             var midnight = day.AddDays(1);
             if (midnight >= from && midnight <= until)
                 points.Add(midnight);
-
-            foreach (var range in ranges)
-            {
-                var rangeStart = day.Add(range.Start.ToTimeSpan());
-                if (rangeStart >= from && rangeStart <= until)
-                    points.Add(rangeStart);
-
-                var beforeStart = rangeStart.AddMinutes(-1);
-                if (beforeStart >= from && beforeStart <= until)
-                    points.Add(beforeStart);
-
-                var rangeEnd = day.Add(range.End.ToTimeSpan());
-                if (rangeEnd >= from && rangeEnd <= until)
-                    points.Add(rangeEnd);
-
-                var afterEnd = rangeEnd.AddMinutes(1);
-                if (afterEnd >= from && afterEnd <= until)
-                    points.Add(afterEnd);
-            }
 
             day = day.AddDays(1);
         }
