@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+      - '!nightly'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Publish NativeAOT
+        run: dotnet publish src/AutoPower -c Release -r win-x64 -p:PublishAot=true --output artifacts/publish
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "artifacts/publish/*" -DestinationPath "artifacts/AutoPower-win-x64.zip" -Force
+
+      - name: Resolve release metadata
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}".StartsWith("refs/tags/")) {
+            "RELEASE_TAG=${{ github.ref_name }}" >> $env:GITHUB_ENV
+            "RELEASE_NAME=${{ github.ref_name }}" >> $env:GITHUB_ENV
+            "IS_NIGHTLY=false" >> $env:GITHUB_ENV
+          } else {
+            "RELEASE_TAG=nightly" >> $env:GITHUB_ENV
+            "RELEASE_NAME=nightly-${{ github.sha }}" >> $env:GITHUB_ENV
+            "IS_NIGHTLY=true" >> $env:GITHUB_ENV
+          }
+
+      - name: Update nightly tag
+        if: env.IS_NIGHTLY == 'true'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly ${{ github.sha }}
+          git push origin refs/tags/nightly --force
+
+      - name: Publish nightly release
+        if: env.IS_NIGHTLY == 'true'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          artifacts: artifacts/AutoPower-win-x64.zip
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          prerelease: true
+          makeLatest: false
+          generateReleaseNotes: true
+
+      - name: Publish tag release
+        if: env.IS_NIGHTLY == 'false'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          artifacts: artifacts/AutoPower-win-x64.zip
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          prerelease: false
+          makeLatest: true
+          generateReleaseNotes: true

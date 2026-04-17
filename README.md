@@ -14,8 +14,9 @@ AutoPower is a lightweight Windows tray app that automatically switches Windows 
 
 ## Requirements
 
-- Windows 10 or later
-- Administrator rights to change power plans
+- Windows 10 or later (full tray app experience)
+- Linux (GNOME) for basic power profile switching support
+- Administrator rights to change power plans (Windows)
 - .NET 10 SDK to build from source
 
 ## Build
