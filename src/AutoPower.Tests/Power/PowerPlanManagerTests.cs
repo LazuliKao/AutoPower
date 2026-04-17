@@ -20,15 +20,20 @@ public class PowerPlanManagerTests(ITestOutputHelper logger)
         Assert.NotNull(plans);
         Assert.NotEmpty(plans);
 
-        // Every Windows system should have at least the balanced plan
-        Assert.Contains(
-            plans,
-            p => p.Guid == PowrProf.GUID_BALANCED || !string.IsNullOrEmpty(p.Name)
-        );
-        Assert.Contains(
-            plans,
-            p => p.Guid == PowrProf.GUID_HIGH_PERFORMANCE || !string.IsNullOrEmpty(p.Name)
-        );
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains(
+                plans,
+                p => p.Guid == PowrProf.GUID_BALANCED || !string.IsNullOrEmpty(p.Name)
+            );
+            Assert.Contains(
+                plans,
+                p => p.Guid == PowrProf.GUID_HIGH_PERFORMANCE || !string.IsNullOrEmpty(p.Name)
+            );
+            return;
+        }
+
+        Assert.All(plans, plan => Assert.False(string.IsNullOrWhiteSpace(plan.Name)));
     }
 
     [Fact]
@@ -61,5 +66,12 @@ public class PowerPlanManagerTests(ITestOutputHelper logger)
         Assert.NotNull(activeFromGet);
         Assert.Equal(activeFromGet.Guid, activePlans[0].Guid);
         Assert.Equal(activeFromGet.Name, activePlans[0].Name);
+    }
+
+    [Fact]
+    public void SetActivePlan_UnknownGuid_ReturnsFalse()
+    {
+        var result = PowerPlanManager.SetActivePlan(Guid.NewGuid());
+        Assert.False(result);
     }
 }
