@@ -37,12 +37,11 @@ jobs:
         run: dotnet test -c Release --no-build
 
       - name: Publish NativeAOT
-        run: dotnet publish src/AutoPower -c Release -r win-x64 -p:PublishAot=true --no-build --output artifacts/publish
+        run: dotnet publish src/AutoPower -c Release -r win-x64 -p:PublishAot=true --output artifacts/publish
 
       - name: Package artifact
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           Compress-Archive -Path "artifacts/publish/*" -DestinationPath "artifacts/AutoPower-win-x64.zip" -Force
 
       - name: Resolve release metadata
