@@ -109,7 +109,7 @@ internal static class PowerPlanManager
         };
     }
 
-    private static PowerPlanInfo GetActiveLinuxPlan()
+    private static PowerPlanInfo? GetActiveLinuxPlan()
     {
         if (
             TryRunCommand(
@@ -123,8 +123,8 @@ internal static class PowerPlanManager
             return profile;
         }
 
-        LoggerService.Warn("Unable to read GNOME power profile. Falling back to Balanced.");
-        return new(LinuxBalancedGuid, "Balanced", true);
+        LoggerService.Warn("Unable to read GNOME power profile.");
+        return null;
     }
 
     private static bool SetActiveLinuxPlan(Guid planGuid)
@@ -189,7 +189,7 @@ internal static class PowerPlanManager
             return true;
         }
 
-        planInfo = new(LinuxBalancedGuid, "Balanced", true);
+        planInfo = new(Guid.Empty, string.Empty, false);
         return false;
     }
 
@@ -213,12 +213,14 @@ internal static class PowerPlanManager
             if (!process.Start())
                 return false;
 
-            var stdout = process.StandardOutput.ReadToEnd();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            Task.WaitAll(stdoutTask, stderrTask);
             process.WaitForExit();
             if (process.ExitCode != 0)
                 return false;
 
-            output = stdout;
+            output = stdoutTask.Result;
             return true;
         }
         catch (Exception ex)
