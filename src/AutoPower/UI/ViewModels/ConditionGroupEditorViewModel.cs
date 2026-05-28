@@ -22,6 +22,11 @@ public sealed class ConditionGroupEditorViewModel
     public ObservableValue<StrategyConditionGroupOperator> Operator { get; } = new(StrategyConditionGroupOperator.All);
 
     /// <summary>
+    /// The operator index for ComboBox binding (0=All, 1=Any, 2=None).
+    /// </summary>
+    public ObservableValue<int> OperatorIndex { get; } = new(0);
+
+    /// <summary>
     /// Display label for the operator selection.
     /// </summary>
     public ObservableValue<string> OperatorLabel { get; } = new("All");
@@ -61,6 +66,7 @@ public sealed class ConditionGroupEditorViewModel
         // Subscribe to state changes
         Group.Subscribe(OnGroupChanged);
         Operator.Subscribe(OnOperatorChanged);
+        OperatorIndex.Subscribe(OnOperatorIndexChanged);
     }
 
     /// <summary>
@@ -210,6 +216,23 @@ public sealed class ConditionGroupEditorViewModel
             StrategyConditionGroupOperator.Any => "Any",
             StrategyConditionGroupOperator.None => "None",
             _ => "All",
+        };
+        
+        OperatorIndex.Value = Operator.Value switch
+        {
+            StrategyConditionGroupOperator.Any => 1,
+            StrategyConditionGroupOperator.None => 2,
+            _ => 0,
+        };
+    }
+
+    private void OnOperatorIndexChanged()
+    {
+        Operator.Value = OperatorIndex.Value switch
+        {
+            1 => StrategyConditionGroupOperator.Any,
+            2 => StrategyConditionGroupOperator.None,
+            _ => StrategyConditionGroupOperator.All,
         };
     }
 

@@ -11,8 +11,6 @@ dotnet test --filter "StrategyEvaluatorTests.NoRules_ReturnsNull"  # Single test
 dotnet publish src/AutoPower -c Release -r win-x64 -p:PublishAot=true  # NativeAOT publish
 ```
 
----
-
 ## 🏗️ Architecture Quirks
 
 ### NativeAOT Constraints (CRITICAL)
@@ -37,21 +35,11 @@ AutoPower/               # UI + Entry point (NO domain logic)
 AutoPower.Tests/         # Mirror source structure
 ```
 
-### Namespace Convention
+### Namespace & Static Services
 - **File-scoped namespaces**: `namespace AutoPower.Core.Core;`
-- Models: `AutoPower.Core.Core.Models.*`
-- Services: `AutoPower.Core.Infrastructure.*` or `AutoPower.Core.{Domain}.*`
+- Models: `AutoPower.Core.Core.Models.*` | Services: `AutoPower.Core.Infrastructure.*`
 - Win32 P/Invoke: `AutoPower.Core.Infrastructure.Win32.*`
-
-### Static Services (Global State)
-```csharp
-ConfigService.Load() / ConfigService.Save(config)
-LoggerService.Info("message")
-PowerPlanManager.EnumeratePlans()
-```
-❌ Never instantiate directly — they have internal `Initialize()` methods.
-
----
+- Static services (never instantiate directly): `ConfigService.Load()`, `LoggerService.Info()`, `PowerPlanManager.EnumeratePlans()`
 
 ## 💻 Code Style Rules
 
@@ -71,33 +59,19 @@ public sealed record AppConfig
 internal enum DetectionMode { KeyboardMouse, MonitorSleep, Both }
 internal static class LoggerService { ... }
 
-// Null safety
-string? optionalName = null;        // ✅ Explicit nullable
-string requiredName = "...";        // ✅ Non-nullable initialized
-Guid planGuid = default;            // ✅ OK for structs
-
+// Null safety: string? optional = null; string required = "..."; Guid id = default;
 // Error handling: Log + return false pattern (no exceptions for flow control)
 public bool TrySetActiveScheme(Guid planGuid, out string? errorMessage)
 {
-    if (!PlanExists(planGuid))
-    {
-        errorMessage = $"Plan {planGuid} not found";
-        LoggerService.Error(errorMessage);
-        return false;
-    }
-    errorMessage = null;
-    return true;
+    if (!PlanExists(planGuid)) { errorMessage = $"..."; LoggerService.Error(errorMessage); return false; }
+    errorMessage = null; return true;
 }
 // ❌ NO empty catch blocks, NO swallowing exceptions
 ```
 
----
-
-## 🔌 Win32 P/Invoke Patterns
+## 🔌 Win32 P/Invoke
 
 ```csharp
-using System.Runtime.InteropServices;
-
 namespace AutoPower.Core.Infrastructure.Win32;
 
 internal static partial class User32
@@ -105,13 +79,10 @@ internal static partial class User32
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetLastInputInfo(ref LASTINPUTINFO plii);
-
     [StructLayout(LayoutKind.Sequential)]
     internal struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
 }
 ```
-
----
 
 ## 🧪 Testing Patterns
 
@@ -122,33 +93,21 @@ namespace AutoPower.Tests.Strategy;
 
 public class StrategyEvaluatorTests
 {
-    private static readonly DateTime TestMonday = new(2025, 6, 2, 12, 0, 0);
     private static StrategyDecisionNode Leaf(Guid planGuid) => new() { PlanGuid = planGuid };
 
-    [Fact]
-    public void NoRules_ReturnsNull() { ... }
-
+    [Fact] public void NoRules_ReturnsNull() { ... }
     [Theory]
     [InlineData(DayOfWeek.Monday, true)]
     public void DayTypeFiltering(DayOfWeek dow, bool shouldMatch) { ... }
 }
 ```
-- Use ✅ **Moq** for Win32 API mocks
-- ❌ NO real file I/O in tests
-
----
+- Use ✅ **Moq** for Win32 API mocks | ❌ NO real file I/O in tests
 
 ## 🚨 Forbidden Patterns
 
-- ❌ `DllImport` (use `LibraryImport`)
-- ❌ `Newtonsoft.Json` (use System.Text.Json SourceGen)
-- ❌ `ServiceCollection`/`IServiceProvider` (manual DI only)
-- ❌ Reflection anywhere (read-only in NativeAOT)
-- ❌ `async void` (use Task)
-- ❌ `as any` / `!` type suppression (use proper types)
-- ❌ Empty catch blocks
-
----
+- ❌ `DllImport` (use `LibraryImport`) | ❌ `Newtonsoft.Json` (use System.Text.Json SourceGen)
+- ❌ `ServiceCollection`/`IServiceProvider` (manual DI only) | ❌ Reflection (read-only in NativeAOT)
+- ❌ `async void` (use Task) | ❌ `as any` / `!` type suppression | ❌ Empty catch blocks
 
 ## 🎨 MewUI Skills (UI Components)
 
@@ -172,12 +131,9 @@ using Aprillz.MewUI.Controls;
 // ViewModel: ObservableValue for reactive state
 public ObservableValue<string> Name { get; } = new("");
 
-// One-way binding
-new Label().BindText(vm.Status);
-new Label().BindText(vm.Count, c => $"{c} items");
-
-// Two-way binding (TextBox auto-updates source)
-new TextBox().BindText(vm.Name);
+// One-way binding: new Label().BindText(vm.Status);
+// Two-way binding: new TextBox().BindText(vm.Name);
+// With converter: new Label().BindText(vm.Count, c => $"{c} items");
 
 // Common patterns
 new Button().Content("Save").CornerRadius(6).OnClick(() => Save());
@@ -189,15 +145,9 @@ new Grid().Spacing(8).ColumnDefinitions(
 new StackPanel().Vertical().Spacing(8).Children(...);
 ```
 
----
-
 ## 📋 Quick Checklist Before PR
 
-- [ ] `dotnet test` passes
-- [ ] `dotnet build -c Release` has 0 warnings
-- [ ] No `as any`, `#pragma disable`, or `!` hacks
-- [ ] All exceptions logged (not silently caught)
-- [ ] `record` for data models, `static class` for services
-- [ ] File-scoped namespace in all files
-- [ ] NativeAOT publish completes without warnings
-- [ ] UI code follows MewUI skill docs in `docs/mewui-skills/`
+- [ ] `dotnet test` passes | [ ] `dotnet build -c Release` has 0 warnings
+- [ ] No `as any`, `#pragma disable`, or `!` hacks | [ ] All exceptions logged
+- [ ] `record` for data models, `static class` for services | [ ] File-scoped namespace
+- [ ] NativeAOT publish completes without warnings | [ ] UI code follows MewUI skill docs

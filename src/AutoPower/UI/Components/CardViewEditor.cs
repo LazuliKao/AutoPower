@@ -111,15 +111,15 @@ public sealed class CardViewEditor : UserControl
                         .DockTop()
                         .Background(SurfaceInput)
                         .BorderBrush(BorderColor)
-                        .BorderThickness(0, 0, 0, 1)
+                        .BorderThickness(1)
                         .Padding(12, 8)
                         .Child(breadcrumb),
                     // Scrollable card area
                     new ScrollViewer()
-                        .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
-                        .HorizontalScrollBarVisibility(ScrollBarVisibility.Auto)
+                        .VerticalScroll(ScrollMode.Auto)
+                        .HorizontalScroll(ScrollMode.Auto)
                         .Padding(12)
-                        .Child(cardContent)
+                        .Content(cardContent)
                 )
             );
     }
@@ -127,7 +127,7 @@ public sealed class CardViewEditor : UserControl
     /// <summary>
     /// Builds the breadcrumb navigation bar.
     /// </summary>
-    private Element BuildBreadcrumb(StrategyDecisionNode root)
+    private UIElement BuildBreadcrumb(StrategyDecisionNode root)
     {
         var pathSegments = GetBreadcrumbPath(root, _vm.SelectedNode.Value);
 
@@ -242,7 +242,7 @@ public sealed class CardViewEditor : UserControl
             .BorderBrush(GetDepthBorderColor(depth))
             .BorderThickness(1)
             .CornerRadius(8)
-            .Margin(depth > 0 ? new Thickness(IndentPerLevel, CardSpacing, 0, 0) : new Thickness(0))
+            .Margin(depth > 0 ? new Thickness(0, CardSpacing, 0, 0) : new Thickness(0))
             .Child(
                 new StackPanel()
                     .Vertical()
@@ -250,7 +250,14 @@ public sealed class CardViewEditor : UserControl
                     .Children(BuildCardChildren(header, content, node, depth))
             );
 
-        return card;
+        if (depth == 0)
+        {
+            return card;
+        }
+
+        return new Border()
+            .Padding(IndentPerLevel, 0, 0, 0)
+            .Child(card);
     }
 
     /// <summary>
@@ -302,6 +309,12 @@ public sealed class CardViewEditor : UserControl
             .Horizontal()
             .Spacing(4)
             .Children(
+                CreateCompactButton(toggleIcon, TextMuted, () =>
+                {
+                    ToggleExpansion(node);
+                    SelectNode(node);
+                }),
+                CreateCompactButton("SEL", AccentColor, () => SelectNode(node)),
                 CreateCompactButton("+ THEN", ThenColor, () => AddThenBranch(node)),
                 CreateCompactButton("+ ELSE", ElseColor, () => AddElseBranch(node)),
                 CreateCompactDangerButton("DEL", () => DeleteNode(node))
@@ -310,7 +323,6 @@ public sealed class CardViewEditor : UserControl
         return new Border()
             .Background(SurfaceInput)
             .Padding(10, 8)
-            .OnPointerPressed(_ => ToggleExpansion(node))
             .Child(new DockPanel().Children(actionsRow.DockRight(), headerLeft));
     }
 
@@ -433,7 +445,7 @@ public sealed class CardViewEditor : UserControl
             .BorderBrush(BorderColor)
             .BorderThickness(1)
             .CornerRadius(6)
-            .Margin(IndentPerLevel, CardSpacing, 0, 0)
+            .Margin(0, CardSpacing, 0, 0)
             .Padding(12, 8)
             .Child(
                 new Label()
@@ -601,9 +613,31 @@ public sealed class CardViewEditor : UserControl
     /// </summary>
     private void AddThenBranch(StrategyDecisionNode parent)
     {
-        // Note: This would require mutating the tree structure
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.AddThenBranch(
+            root,
+            parent.Id,
+            new StrategyDecisionNode
+            {
+                If = StrategyConditionGroup.MatchAll(),
+                IsEnabled = true,
+            },
+            out var changed);
+
+        if (!changed)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Then;
+        _vm.SelectNode(selected);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 
@@ -612,9 +646,31 @@ public sealed class CardViewEditor : UserControl
     /// </summary>
     private void AddElseBranch(StrategyDecisionNode parent)
     {
-        // Note: This would require mutating the tree structure
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.AddElseBranch(
+            root,
+            parent.Id,
+            new StrategyDecisionNode
+            {
+                If = StrategyConditionGroup.MatchAll(),
+                IsEnabled = true,
+            },
+            out var changed);
+
+        if (!changed)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Else;
+        _vm.SelectNode(selected);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 
@@ -623,9 +679,21 @@ public sealed class CardViewEditor : UserControl
     /// </summary>
     private void DeleteNode(StrategyDecisionNode node)
     {
-        // Note: This would require tree traversal and reconstruction
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null || root.Id == node.Id)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.DeleteNode(root, node.Id, out var deleted);
+        if (!deleted)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        _vm.SelectNode(null);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 

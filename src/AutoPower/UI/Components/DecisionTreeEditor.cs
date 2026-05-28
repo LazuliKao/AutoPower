@@ -33,12 +33,16 @@ public sealed class DecisionTreeEditor : UserControl
     private readonly ObservableValue<bool> _cardViewSelected = new(false);
     private readonly ObservableValue<bool> _flowchartSelected = new(false);
     private readonly ObservableValue<bool> _jsonViewSelected = new(false);
+    
+    // Guard to prevent recursive subscription calls
+    private bool _isUpdatingViewSelection;
 
     // Observable state for view visibility
     private readonly ObservableValue<bool> _treeViewVisible = new(true);
     private readonly ObservableValue<bool> _cardViewVisible = new(false);
     private readonly ObservableValue<bool> _flowchartVisible = new(false);
     private readonly ObservableValue<bool> _jsonViewVisible = new(false);
+    private readonly ObservableValue<string> _jsonPreviewText = new("No tree loaded");
 
     /// <summary>
     /// Event raised when the tree content changes.
@@ -70,6 +74,9 @@ public sealed class DecisionTreeEditor : UserControl
         _cardEditor.TreeChanged += () => TreeChanged?.Invoke();
         _cardEditor.NodeSelected += node => NodeSelected?.Invoke(node);
 
+        _treeEditor.TreeChanged += OnTreeContentChanged;
+        _cardEditor.TreeChanged += OnTreeContentChanged;
+
         // Subscribe to view selection changes
         _treeViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Tree));
         _cardViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Card));
@@ -97,6 +104,9 @@ public sealed class DecisionTreeEditor : UserControl
         _cardEditor.TreeChanged += () => TreeChanged?.Invoke();
         _cardEditor.NodeSelected += node => NodeSelected?.Invoke(node);
 
+        _treeEditor.TreeChanged += OnTreeContentChanged;
+        _cardEditor.TreeChanged += OnTreeContentChanged;
+
         // Subscribe to view selection changes
         _treeViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Tree));
         _cardViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Card));
@@ -118,6 +128,7 @@ public sealed class DecisionTreeEditor : UserControl
         _treeEditor.LoadTree(root);
         _cardEditor.LoadTree(root);
         _flowchartView.SetTree(root);
+        UpdateJsonPreview();
         Rebuild();
     }
 
@@ -130,6 +141,7 @@ public sealed class DecisionTreeEditor : UserControl
         _treeEditor.ClearTree();
         _cardEditor.ClearTree();
         _flowchartView.ClearTree();
+        UpdateJsonPreview();
         Rebuild();
     }
 
@@ -167,7 +179,7 @@ public sealed class DecisionTreeEditor : UserControl
                     .DockTop()
                     .Background(SurfaceInput)
                     .BorderBrush(BorderColor)
-                    .BorderThickness(0, 0, 0, 1)
+                    .BorderThickness(1)
                     .Padding(8, 6)
                     .Child(viewSwitchBar),
 
@@ -187,7 +199,7 @@ public sealed class DecisionTreeEditor : UserControl
     /// <summary>
     /// Builds the view mode switch bar with RadioButtons.
     /// </summary>
-    private Element BuildViewSwitchBar()
+    private UIElement BuildViewSwitchBar()
     {
         return new StackPanel()
             .Horizontal()
@@ -224,7 +236,7 @@ public sealed class DecisionTreeEditor : UserControl
     /// <summary>
     /// Builds the JSON preview panel.
     /// </summary>
-    private Element BuildJsonPreview()
+    private UIElement BuildJsonPreview()
     {
         var root = _vm.Root.Value;
 
@@ -241,12 +253,12 @@ public sealed class DecisionTreeEditor : UserControl
         var jsonText = GenerateJsonPreview(root);
 
         return new ScrollViewer()
-            .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
-            .HorizontalScrollBarVisibility(ScrollBarVisibility.Auto)
+            .VerticalScroll(ScrollMode.Auto)
+            .HorizontalScroll(ScrollMode.Auto)
             .MaxHeight(400)
-            .Child(
+            .Content(
                 new TextBlock()
-                    .Text(jsonText)
+                    .BindText(_jsonPreviewText)
                     .FontFamily("Consolas")
                     .FontSize(11)
                     .Foreground(TextPrimary)
@@ -301,6 +313,12 @@ public sealed class DecisionTreeEditor : UserControl
     /// </summary>
     private void OnViewSelectionChanged(DecisionTreeViewMode newMode)
     {
+        // Prevent recursive calls from subscription
+        if (_isUpdatingViewSelection)
+        {
+            return;
+        }
+
         // Only process if this is a new selection (not just re-setting the same value)
         if (_vm.CurrentView.Value == newMode)
         {
@@ -319,11 +337,17 @@ public sealed class DecisionTreeEditor : UserControl
         _flowchartVisible.Value = newMode == DecisionTreeViewMode.Flowchart;
         _jsonViewVisible.Value = newMode == DecisionTreeViewMode.Json;
 
-        // Ensure only one RadioButton is checked
-        UpdateRadioButtonStates(newMode);
+        if (newMode == DecisionTreeViewMode.Json)
+        {
+            UpdateJsonPreview();
+        }
 
-        // Rebuild to reflect visibility changes
-        Rebuild();
+        // Ensure only one RadioButton is checked (with guard to prevent recursion)
+        _isUpdatingViewSelection = true;
+        UpdateRadioButtonStates(newMode);
+        _isUpdatingViewSelection = false;
+
+        // Visibility is bound to observables; no full rebuild needed.
     }
 
     /// <summary>
@@ -341,15 +365,10 @@ public sealed class DecisionTreeEditor : UserControl
     /// </summary>
     private void UpdateRadioButtonStates(DecisionTreeViewMode mode)
     {
-        // Suppress change notifications during update to prevent recursion
-        var suppressChange = true;
-
         _treeViewSelected.Value = mode == DecisionTreeViewMode.Tree;
         _cardViewSelected.Value = mode == DecisionTreeViewMode.Card;
         _flowchartSelected.Value = mode == DecisionTreeViewMode.Flowchart;
         _jsonViewSelected.Value = mode == DecisionTreeViewMode.Json;
-
-        suppressChange = false;
     }
 
     /// <summary>
@@ -368,6 +387,17 @@ public sealed class DecisionTreeEditor : UserControl
         _cardViewVisible.Value = mode == DecisionTreeViewMode.Card;
         _flowchartVisible.Value = mode == DecisionTreeViewMode.Flowchart;
         _jsonViewVisible.Value = mode == DecisionTreeViewMode.Json;
+    }
+
+    private void OnTreeContentChanged()
+    {
+        UpdateJsonPreview();
+    }
+
+    private void UpdateJsonPreview()
+    {
+        var root = _vm.Root.Value;
+        _jsonPreviewText.Value = root == null ? "No tree loaded" : GenerateJsonPreview(root);
     }
 
     private void Rebuild()

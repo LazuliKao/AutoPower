@@ -84,6 +84,17 @@ public sealed class TreeViewEditor : UserControl
                 keySelector: n => n.Id)
             .ItemTemplate(CreateNodeTemplate());
 
+        treeView.SelectionChanged += selectedItem =>
+        {
+            if (selectedItem is StrategyDecisionNode selectedNode)
+            {
+                SelectNode(selectedNode);
+                return;
+            }
+
+            SelectNode(null);
+        };
+
         // Wrap in scrollable container for deep trees
         return new Border()
             .Background(SurfaceCard)
@@ -93,25 +104,27 @@ public sealed class TreeViewEditor : UserControl
             .Padding(12)
             .Child(
                 new ScrollViewer()
-                    .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
-                    .HorizontalScrollBarVisibility(ScrollBarVisibility.Auto)
-                    .Child(treeView)
+                    .VerticalScroll(ScrollMode.Auto)
+                    .HorizontalScroll(ScrollMode.Auto)
+                    .Content(treeView)
             );
     }
 
     /// <summary>
     /// Gets children of a decision node (Then branch first, then Else branch).
     /// </summary>
-    private static IEnumerable<StrategyDecisionNode> GetChildren(StrategyDecisionNode node)
+    private static IReadOnlyList<StrategyDecisionNode> GetChildren(StrategyDecisionNode node)
     {
+        var children = new List<StrategyDecisionNode>();
         if (node.Then is not null)
         {
-            yield return node.Then;
+            children.Add(node.Then);
         }
         if (node.Else is not null)
         {
-            yield return node.Else;
+            children.Add(node.Else);
         }
+        return children;
     }
 
     /// <summary>
@@ -241,9 +254,39 @@ public sealed class TreeViewEditor : UserControl
                 var addElseBtn = ctx.Get<Button>("AddElse");
                 var deleteBtn = ctx.Get<Button>("Delete");
 
-                // Clear previous handlers by creating new buttons
-                // Note: In MewUI, we need to handle this differently
-                // For now, we'll set up the click handlers on the template buttons
+                addThenBtn
+                    .OnClick(() =>
+                    {
+                        if (node.Then != null)
+                        {
+                            return;
+                        }
+
+                        AddThenBranch(node);
+                    });
+
+                addElseBtn
+                    .OnClick(() =>
+                    {
+                        if (node.Else != null)
+                        {
+                            return;
+                        }
+
+                        AddElseBranch(node);
+                    });
+
+                deleteBtn
+                    .OnClick(() =>
+                    {
+                        var rootNode = _vm.Root.Value;
+                        if (rootNode == null || rootNode.Id == node.Id)
+                        {
+                            return;
+                        }
+
+                        DeleteNode(node);
+                    });
             });
     }
 
@@ -355,9 +398,31 @@ public sealed class TreeViewEditor : UserControl
     /// </summary>
     private void AddThenBranch(StrategyDecisionNode parent)
     {
-        // Note: This would require mutating the tree structure
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.AddThenBranch(
+            root,
+            parent.Id,
+            new StrategyDecisionNode
+            {
+                If = StrategyConditionGroup.MatchAll(),
+                IsEnabled = true,
+            },
+            out var changed);
+
+        if (!changed)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Then;
+        _vm.SelectNode(selected);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 
@@ -366,9 +431,31 @@ public sealed class TreeViewEditor : UserControl
     /// </summary>
     private void AddElseBranch(StrategyDecisionNode parent)
     {
-        // Note: This would require mutating the tree structure
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.AddElseBranch(
+            root,
+            parent.Id,
+            new StrategyDecisionNode
+            {
+                If = StrategyConditionGroup.MatchAll(),
+                IsEnabled = true,
+            },
+            out var changed);
+
+        if (!changed)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Else;
+        _vm.SelectNode(selected);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 
@@ -377,16 +464,28 @@ public sealed class TreeViewEditor : UserControl
     /// </summary>
     private void DeleteNode(StrategyDecisionNode node)
     {
-        // Note: This would require tree traversal and reconstruction
-        // For now, this is a placeholder that triggers TreeChanged
-        // Actual implementation would need immutable tree updates
+        var root = _vm.Root.Value;
+        if (root == null || root.Id == node.Id)
+        {
+            return;
+        }
+
+        var updatedRoot = DecisionTreeMutation.DeleteNode(root, node.Id, out var deleted);
+        if (!deleted)
+        {
+            return;
+        }
+
+        _vm.LoadTree(updatedRoot);
+        _vm.SelectNode(null);
+        Rebuild();
         TreeChanged?.Invoke();
     }
 
     /// <summary>
     /// Handles node selection.
     /// </summary>
-    private void SelectNode(StrategyDecisionNode node)
+    private void SelectNode(StrategyDecisionNode? node)
     {
         _vm.SelectNode(node);
         Rebuild();

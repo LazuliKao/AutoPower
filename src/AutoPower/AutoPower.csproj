@@ -29,6 +29,7 @@
     <Compile Include="UI\Components\TreeViewEditor.cs" />
     <Compile Include="UI\Components\CardViewEditor.cs" />
     <Compile Include="UI\Components\FlowchartView.cs" />
+    <Compile Include="UI\Components\DecisionTreeMutation.cs" />
     <Compile Include="UI\Components\DecisionTreeEditor.cs" />
   </ItemGroup>
 

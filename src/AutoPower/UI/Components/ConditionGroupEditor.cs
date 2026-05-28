@@ -14,6 +14,7 @@ namespace AutoPower.UI.Components;
 public sealed class ConditionGroupEditor : UserControl
 {
     private readonly ConditionGroupEditorViewModel _vm;
+    private readonly Dictionary<Guid, ConditionGroupEditor> _nestedEditors = new();
 
     // Colors matching SettingsWindow theme
     private static readonly Color SurfaceCard = Color.FromHex("#1C2333");
@@ -51,6 +52,8 @@ public sealed class ConditionGroupEditor : UserControl
     public void LoadGroup(StrategyConditionGroup? group, bool isRoot = false)
     {
         _vm.LoadGroup(group, isRoot);
+        CleanupNestedEditors();
+        Rebuild();
     }
 
     /// <summary>
@@ -66,7 +69,7 @@ public sealed class ConditionGroupEditor : UserControl
         // Operator ComboBox
         var operatorComboBox = new ComboBox()
             .Items(new[] { "All", "Any", "None" })
-            .BindSelectedIndex(_vm.Operator, o => (int)o)
+            .BindSelectedIndex(_vm.OperatorIndex)
             .Width(92)
             .Height(26)
             .Padding(6, 3)
@@ -192,7 +195,7 @@ public sealed class ConditionGroupEditor : UserControl
     {
         var operatorComboBox = new ComboBox()
             .Items(new[] { "All", "Any", "None" })
-            .BindSelectedIndex(_vm.Operator, o => (int)o)
+            .BindSelectedIndex(_vm.OperatorIndex)
             .Width(92)
             .Height(26)
             .Padding(6, 3)
@@ -388,8 +391,11 @@ public sealed class ConditionGroupEditor : UserControl
         var group = _vm.Group.Value;
         if (group == null || group.Groups.Count == 0)
         {
+            _nestedEditors.Clear();
             return Array.Empty<Element>();
         }
+
+        CleanupNestedEditors(group.Groups);
 
         var rows = new List<Element>();
         foreach (var nestedGroup in group.Groups)
@@ -402,6 +408,16 @@ public sealed class ConditionGroupEditor : UserControl
 
     private Element BuildNestedGroupEditor(StrategyConditionGroup nestedGroup)
     {
+        if (_nestedEditors.TryGetValue(nestedGroup.Id, out var cachedEditor))
+        {
+            cachedEditor.LoadGroup(nestedGroup, isRoot: false);
+
+            return new Border()
+                .Padding(12, 0, 0, 0)
+                .Child(cachedEditor);
+        }
+
+        var nestedGroupId = nestedGroup.Id;
         var nestedEditor = new ConditionGroupEditor();
         nestedEditor.LoadGroup(nestedGroup, isRoot: false);
         nestedEditor.GroupChanged += () =>
@@ -410,19 +426,58 @@ public sealed class ConditionGroupEditor : UserControl
         };
         nestedEditor.DeleteRequested += () =>
         {
-            _vm.RemoveNestedGroup(nestedGroup.Id);
+            _nestedEditors.Remove(nestedGroupId);
+            _vm.RemoveNestedGroup(nestedGroupId);
             Rebuild();
             GroupChanged?.Invoke();
         };
 
+        _nestedEditors[nestedGroupId] = nestedEditor;
+
         return new Border()
-            .Margin(12, 0, 0, 0)
+            .Padding(12, 0, 0, 0)
             .Child(nestedEditor);
+    }
+
+    private void CleanupNestedEditors()
+    {
+        var group = _vm.Group.Value;
+        if (group == null)
+        {
+            _nestedEditors.Clear();
+            return;
+        }
+
+        CleanupNestedEditors(group.Groups);
+    }
+
+    private void CleanupNestedEditors(IReadOnlyList<StrategyConditionGroup> groups)
+    {
+        var activeGroupIds = new HashSet<Guid>();
+        foreach (var nestedGroup in groups)
+        {
+            activeGroupIds.Add(nestedGroup.Id);
+        }
+
+        var staleIds = new List<Guid>();
+        foreach (var nestedEditorId in _nestedEditors.Keys)
+        {
+            if (!activeGroupIds.Contains(nestedEditorId))
+            {
+                staleIds.Add(nestedEditorId);
+            }
+        }
+
+        foreach (var staleId in staleIds)
+        {
+            _nestedEditors.Remove(staleId);
+        }
     }
 
     private void Rebuild()
     {
         // Rebuild the control to reflect state changes
+        CleanupNestedEditors();
         Build();
     }
 

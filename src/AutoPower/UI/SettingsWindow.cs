@@ -39,7 +39,6 @@ internal sealed class SettingsWindow
     private DecisionTreeEditor? _decisionTreeEditor;
 
     private Label? _rulesSummaryLabel;
-    private Border? _rulesContainer;
 
     private Label? _overrideStatusLabel;
     private ComboBox? _overridePlanComboBox;
