@@ -225,7 +225,7 @@ public sealed class DecisionTreeEditor : UserControl
     private static RadioButton CreateViewRadioButton(string text, ObservableValue<bool> isChecked)
     {
         return new RadioButton()
-            .Text(text)
+            .Content(text)
             .GroupName("DecisionTreeViewMode")
             .BindIsChecked(isChecked)
             .Foreground(TextPrimary)

@@ -240,8 +240,10 @@ public sealed class FlowchartView : Control
         var bgColor = isLeaf ? LeafColor : SurfaceCard;
         var borderColor = isLeaf ? LeafColor : BorderColor;
 
-        // Draw background and border
-        DrawBackgroundAndBorder(context, snappedRect, bgColor, borderColor, NodeCornerRadius);
+        // Draw background
+        context.FillRectangle(snappedRect, bgColor);
+        // Draw border
+        context.DrawRectangle(snappedRect, borderColor, 1.0);
 
         // Draw node label
         var font = GetFont();

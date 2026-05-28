@@ -175,21 +175,21 @@ internal sealed class SettingsWindow
     private Element CreateGeneralTabContent()
     {
         _modeKeyboardMouse = new RadioButton()
-            .Text("Keyboard/Mouse")
+            .Content("Keyboard/Mouse")
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.KeyboardMouse)
             .Foreground(TextPrimary)
             .FontFamily("Consolas");
 
         _modeMonitorSleep = new RadioButton()
-            .Text("Monitor Sleep")
+            .Content("Monitor Sleep")
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.MonitorSleep)
             .Foreground(TextPrimary)
             .FontFamily("Consolas");
 
         _modeBoth = new RadioButton()
-            .Text("Both")
+            .Content("Both")
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.Both)
             .Foreground(TextPrimary)
@@ -232,7 +232,7 @@ internal sealed class SettingsWindow
         );
 
         _autoStartCheckBox = new CheckBox()
-            .Text("Start AutoPower when Windows starts")
+            .Content("Start AutoPower when Windows starts")
             .IsChecked(_config.AutoStartEnabled)
             .Foreground(TextPrimary)
             .FontFamily("Consolas");
@@ -446,12 +446,12 @@ internal sealed class SettingsWindow
     private Element CreatePreviewTabContent()
     {
         _previewKeyboardMouseIdleCheckBox = new CheckBox()
-            .Text("Assume keyboard/mouse is idle")
+            .Content("Assume keyboard/mouse is idle")
             .IsChecked(false)
             .Foreground(TextPrimary)
             .FontFamily("Consolas");
         _previewMonitorOffCheckBox = new CheckBox()
-            .Text("Assume monitor is off")
+            .Content("Assume monitor is off")
             .IsChecked(false)
             .Foreground(TextPrimary)
             .FontFamily("Consolas");
