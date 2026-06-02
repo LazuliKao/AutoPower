@@ -1,0 +1,113 @@
+{
+  "App": {
+    "Title": "AutoPower"
+  },
+  "Language": {
+    "Label": "语言",
+    "Desc": "应用程序的显示语言。更改将在重新打开设置后生效。",
+    "English": "English",
+    "ChineseSimplified": "简体中文",
+    "ChineseTraditional": "繁體中文",
+    "SystemDefault": "跟随系统"
+  },
+  "Tray": {
+    "StatusActive": "状态: 活动",
+    "StatusIdle": "状态: 空闲",
+    "StatusOverride": "状态: 手动覆盖",
+    "StatusUnknown": "状态: 未知",
+    "Settings": "设置...",
+    "ClearOverride": "清除覆盖",
+    "Exit": "退出"
+  },
+  "Settings": {
+    "Title": "AutoPower 设置",
+    "Subtitle": "电源策略与覆盖的工业风格控制面板",
+    "Loading": "加载中...",
+    "Save": "保存"
+  },
+  "Tabs": {
+    "General": "常规",
+    "Interface": "界面",
+    "Schedule": "计划",
+    "Override": "覆盖",
+    "Preview": "预览",
+    "About": "关于"
+  },
+  "Interface": {
+    "Title": "界面",
+    "TitleDesc": "语言、主题和显示缩放偏好。",
+    "ThemeLabel": "主题",
+    "ThemeDesc": "选择浅色、深色或跟随系统设置。",
+    "ThemeSystem": "跟随系统",
+    "ThemeLight": "浅色",
+    "ThemeDark": "深色",
+    "ScaleLabel": "显示缩放",
+    "ScaleDesc": "调整界面字体和控件大小。100% 为默认值。",
+    "ScalePercent": "{0}%",
+    "ScaleRestartNotice": "显示缩放更改将在重启应用程序后生效。"
+  },
+  "General": {
+    "DetectionStrategy": "检测策略",
+    "DetectionStrategyDesc": "选择规则条件和回退可用的运行时检测器。",
+    "ModeKeyboardMouse": "键盘/鼠标",
+    "ModeMonitorSleep": "显示器休眠",
+    "ModeBoth": "两者",
+    "PowerTransition": "电源切换",
+    "PowerTransitionDesc": "调整空闲阈值并映射规则默认和最终回退的电源计划。",
+    "IdleTimeoutLabel": "空闲超时（分钟）",
+    "IdleTimeoutPlaceholder": "分钟",
+    "DefaultPlan": "默认计划",
+    "NoneOption": "无",
+    "ActiveFallbackPlan": "活动回退计划",
+    "IdleFallbackPlan": "空闲回退计划",
+    "Startup": "启动",
+    "StartupDesc": "控制与 Windows 启动的集成。",
+    "AutoStart": "Windows 启动时自动运行 AutoPower"
+  },
+  "Schedule": {
+    "DecisionTreeStrategy": "决策树策略",
+    "DecisionTreeDesc": "用于电源计划选择的 IF-THEN-ELSE 决策树。每个节点评估一个条件组并相应分支。",
+    "NodeConfigured": "已配置 {0} 个节点",
+    "NodeConfiguredSingular": "已配置 1 个节点"
+  },
+  "Override": {
+    "ManualOverride": "手动覆盖",
+    "ManualOverrideDesc": "强制临时计划，忽略自动策略。",
+    "OverridePlan": "覆盖计划",
+    "DurationLabel": "持续时间（分钟）",
+    "DurationPlaceholder": "分钟",
+    "SetOverride": "设置覆盖",
+    "ClearOverride": "清除覆盖",
+    "OverrideActive": "覆盖已激活（到期: {0}）",
+    "NoOverrideActive": "无覆盖激活",
+    "NotificationOverrideActive": "覆盖已激活",
+    "NotificationForced": "已强制 '{0}' 持续 {1} 分钟",
+    "NotificationFailed": "设置覆盖失败",
+    "NotificationInvalidDuration": "输入的持续时间无效。",
+    "NotificationNoPlan": "未选择计划。",
+    "NotificationCleared": "覆盖已清除",
+    "NotificationResumed": "已恢复自动计划管理。"
+  },
+  "Preview": {
+    "TimelinePreview": "时间线预览",
+    "TimelinePreviewDesc": "预览使用下方选定的检测器快照。基于检测器的规则依赖于运行时，不保证未来行为。",
+    "AssumeKeyboardMouseIdle": "假设键盘/鼠标空闲",
+    "AssumeMonitorOff": "假设显示器关闭",
+    "NoTransitions": "未来 24 小时内无即将到来的计划切换。",
+    "UntilEndOfPreview": "直到预览结束"
+  },
+  "About": {
+    "Version": "版本 {0}",
+    "Description": "Windows 自动电源计划管理",
+    "Tagline": "基于空闲检测和调度规则智能切换计划。",
+    "BuiltWith": "使用 Aprillz.MewUI 构建"
+  },
+  "Duration": {
+    "LessThanOneMin": "< 1 分钟",
+    "Minutes": "{0} 分钟",
+    "HoursMinutes": "{0}小时 {1}分",
+    "Hours": "{0}小时",
+    "DaysHours": "{0}天 {1}小时",
+    "Days": "{0}天"
+  }
+}

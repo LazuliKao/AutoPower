@@ -2,6 +2,7 @@
 
 using Aprillz.MewUI;
 using AutoPower.Core.Core.Models;
+using AutoPower.UI.Components;
 
 namespace AutoPower.UI.ViewModels;
 
@@ -22,9 +23,9 @@ public sealed class DecisionTreeViewModel
     public ObservableValue<StrategyDecisionNode?> SelectedNode { get; } = new(null);
 
     /// <summary>
-    /// The current view mode (Tree or JSON preview).
+    /// The current view mode (Card, Flowchart, or JSON preview).
     /// </summary>
-    public ObservableValue<DecisionTreeViewMode> CurrentView { get; } = new(DecisionTreeViewMode.Tree);
+    public ObservableValue<DecisionTreeViewMode> CurrentView { get; } = new(DecisionTreeViewMode.Card);
 
     /// <summary>
     /// Indicates whether the tree has any nodes.
@@ -58,6 +59,25 @@ public sealed class DecisionTreeViewModel
     }
 
     /// <summary>
+    /// Updates the tree root without resetting selection.
+    /// If the selected node was mutated, updates the selection reference by matching ID.
+    /// </summary>
+    public void UpdateTree(StrategyDecisionNode? root)
+    {
+        var prevSelectedId = SelectedNode.Value?.Id;
+        Root.Value = root;
+        if (prevSelectedId.HasValue && root != null)
+        {
+            var newSelectedNode = DecisionTreeMutation.FindNodeById(root, prevSelectedId.Value);
+            SelectedNode.Value = newSelectedNode;
+        }
+        else
+        {
+            SelectedNode.Value = null;
+        }
+    }
+
+    /// <summary>
     /// Clears the decision tree.
     /// </summary>
     public void ClearTree()
@@ -74,13 +94,7 @@ public sealed class DecisionTreeViewModel
         SelectedNode.Value = node;
     }
 
-    /// <summary>
-    /// Switches to tree view mode.
-    /// </summary>
-    public void SwitchToTreeView()
-    {
-        CurrentView.Value = DecisionTreeViewMode.Tree;
-    }
+
 
     /// <summary>
     /// Switches to JSON preview mode.
@@ -121,7 +135,6 @@ public sealed class DecisionTreeViewModel
 /// </summary>
 public enum DecisionTreeViewMode
 {
-    Tree,
     Card,
     Flowchart,
     Json,

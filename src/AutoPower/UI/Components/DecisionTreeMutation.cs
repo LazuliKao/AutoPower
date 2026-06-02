@@ -140,6 +140,62 @@ internal static class DecisionTreeMutation
         return FindNodeById(root.Then, nodeId) ?? FindNodeById(root.Else, nodeId);
     }
 
+    public static StrategyDecisionNode SetPlanGuid(
+        StrategyDecisionNode root,
+        Guid nodeId,
+        Guid? planGuid,
+        out bool changed)
+    {
+        var updated = UpdateNode(
+            root,
+            nodeId,
+            node => node with { PlanGuid = planGuid },
+            out changed
+        );
+
+        if (changed)
+        {
+            ValidateTree(updated);
+        }
+
+        return updated;
+    }
+
+    public static StrategyDecisionNode SetIsEnabled(
+        StrategyDecisionNode root,
+        Guid nodeId,
+        bool isEnabled,
+        out bool changed)
+    {
+        return UpdateNode(
+            root,
+            nodeId,
+            node => node with { IsEnabled = isEnabled },
+            out changed
+        );
+    }
+
+    public static StrategyDecisionNode SetIf(
+        StrategyDecisionNode root,
+        Guid nodeId,
+        StrategyConditionGroup? conditionGroup,
+        out bool changed)
+    {
+        var updated = UpdateNode(
+            root,
+            nodeId,
+            node => node with { If = conditionGroup },
+            out changed
+        );
+
+        if (changed)
+        {
+            ValidateTree(updated);
+        }
+
+        return updated;
+    }
+
     private static StrategyDecisionNode UpdateNode(
         StrategyDecisionNode node,
         Guid targetId,

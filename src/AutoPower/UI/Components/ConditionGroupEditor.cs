@@ -66,42 +66,7 @@ public sealed class ConditionGroupEditor : UserControl
 
     protected override Element? OnBuild()
     {
-        // Operator ComboBox
-        var operatorComboBox = new ComboBox()
-            .Items(new[] { "All", "Any", "None" })
-            .BindSelectedIndex(_vm.OperatorIndex)
-            .Width(92)
-            .Height(26)
-            .Padding(6, 3)
-            .Background(SurfaceInput)
-            .Foreground(TextPrimary)
-            .BorderBrush(BorderColor)
-            .BorderThickness(1)
-            .FontFamily("Consolas");
-
-        // Add Condition button
-        var addConditionButton = CreateCompactButton(
-            "+ Cond",
-            () =>
-            {
-                _vm.AddCondition(StrategyConditionType.DayType);
-                Rebuild();
-                GroupChanged?.Invoke();
-            })
-            .Width(56);
-
-        // Add Group button
-        var addGroupButton = CreateCompactButton(
-            "+ Group",
-            () =>
-            {
-                _vm.AddNestedGroup();
-                Rebuild();
-                GroupChanged?.Invoke();
-            })
-            .Width(56);
-
-        // Header row
+        // Header label
         var headerLeft = new StackPanel()
             .Horizontal()
             .Spacing(6)
@@ -117,31 +82,6 @@ public sealed class ConditionGroupEditor : UserControl
                     .FontSize(10)
                     .Foreground(TextMuted)
             );
-
-        var headerActions = new StackPanel()
-            .Horizontal()
-            .Spacing(6)
-            .Children(operatorComboBox, addConditionButton, addGroupButton);
-
-        // Delete button (only for non-root groups)
-        var deleteButton = CreateCompactDangerButton(
-            "Del",
-            () =>
-            {
-                DeleteRequested?.Invoke();
-            })
-            .Width(42);
-
-        // Build header with conditional delete button
-        var headerElements = new List<Element>
-        {
-            headerLeft,
-            new Label()
-                .Text("Operator")
-                .FontFamily("Consolas")
-                .FontSize(10)
-                .Foreground(TextMuted),
-        };
 
         // Conditionally add delete button to actions
         var headerRow = new StackPanel()
@@ -195,7 +135,7 @@ public sealed class ConditionGroupEditor : UserControl
     {
         var operatorComboBox = new ComboBox()
             .Items(new[] { "All", "Any", "None" })
-            .BindSelectedIndex(_vm.OperatorIndex)
+            .SelectedIndex(_vm.OperatorIndex.Value)
             .Width(92)
             .Height(26)
             .Padding(6, 3)
@@ -204,6 +144,16 @@ public sealed class ConditionGroupEditor : UserControl
             .BorderBrush(BorderColor)
             .BorderThickness(1)
             .FontFamily("Consolas");
+
+        operatorComboBox.SelectionChanged += _ =>
+        {
+            var selectedIdx = operatorComboBox.SelectedIndex;
+            if (selectedIdx >= 0 && selectedIdx != _vm.OperatorIndex.Value)
+            {
+                _vm.SetOperatorByIndex(selectedIdx);
+                GroupChanged?.Invoke();
+            }
+        };
 
         var addConditionButton = CreateCompactButton(
             "+ Cond",
@@ -272,16 +222,18 @@ public sealed class ConditionGroupEditor : UserControl
             .BorderThickness(1)
             .FontFamily("Consolas");
 
-        var inputs = BuildConditionInputs(condition);
-
-        var applyButton = CreateCompactButton(
-            "Apply",
-            () =>
+        typeComboBox.SelectionChanged += _ =>
+        {
+            var selectedIdx = typeComboBox.SelectedIndex;
+            if (selectedIdx >= 0 && selectedIdx != (int)condition.Type)
             {
+                _vm.UpdateCondition(condition.Id, c => c with { Type = (StrategyConditionType)selectedIdx });
                 Rebuild();
                 GroupChanged?.Invoke();
-            })
-            .Width(52);
+            }
+        };
+
+        var inputs = BuildConditionInputs(condition);
 
         var removeButton = CreateCompactDangerButton(
             "Del",
@@ -303,7 +255,7 @@ public sealed class ConditionGroupEditor : UserControl
                 new StackPanel()
                     .Horizontal()
                     .Spacing(6)
-                    .Children(typeComboBox, inputs, applyButton, removeButton)
+                    .Children(typeComboBox, inputs, removeButton)
             );
     }
 
@@ -333,7 +285,7 @@ public sealed class ConditionGroupEditor : UserControl
 
     private Element BuildDayTypeInput(StrategyCondition condition)
     {
-        return new ComboBox()
+        var dayTypeComboBox = new ComboBox()
             .Items(new[] { "All", "Weekday", "Weekend" })
             .SelectedIndex((int)condition.DayType)
             .Width(120)
@@ -344,13 +296,26 @@ public sealed class ConditionGroupEditor : UserControl
             .BorderBrush(BorderColor)
             .BorderThickness(1)
             .FontFamily("Consolas");
+
+        dayTypeComboBox.SelectionChanged += _ =>
+        {
+            var selectedIdx = dayTypeComboBox.SelectedIndex;
+            if (selectedIdx >= 0 && selectedIdx != (int)condition.DayType)
+            {
+                _vm.UpdateCondition(condition.Id, c => c with { DayType = (DayType)selectedIdx });
+                Rebuild();
+                GroupChanged?.Invoke();
+            }
+        };
+
+        return dayTypeComboBox;
     }
 
     private Element BuildTimeRangeInput(StrategyCondition condition)
     {
         var startTextBox = new TextBox()
             .Text(condition.Start.ToString("HH:mm"))
-            .Width(84)
+            .Width(64)
             .Height(26)
             .Padding(6, 3)
             .Background(SurfaceInput)
@@ -362,7 +327,7 @@ public sealed class ConditionGroupEditor : UserControl
 
         var endTextBox = new TextBox()
             .Text(condition.End.ToString("HH:mm"))
-            .Width(84)
+            .Width(64)
             .Height(26)
             .Padding(6, 3)
             .Background(SurfaceInput)
@@ -371,6 +336,21 @@ public sealed class ConditionGroupEditor : UserControl
             .BorderThickness(1)
             .FontFamily("Consolas")
             .Placeholder("End");
+
+        var applyButton = CreateCompactButton(
+            "Apply",
+            () =>
+            {
+                var startText = startTextBox.Text ?? "00:00";
+                var endText = endTextBox.Text ?? "00:00";
+                if (TimeOnly.TryParse(startText, out var startTime) && TimeOnly.TryParse(endText, out var endTime))
+                {
+                    _vm.UpdateCondition(condition.Id, c => c with { Start = startTime, End = endTime });
+                    Rebuild();
+                    GroupChanged?.Invoke();
+                }
+            })
+            .Width(52);
 
         return new StackPanel()
             .Horizontal()
@@ -382,7 +362,8 @@ public sealed class ConditionGroupEditor : UserControl
                     .FontFamily("Consolas")
                     .FontSize(10)
                     .Foreground(TextMuted),
-                endTextBox
+                endTextBox,
+                applyButton
             );
     }
 
@@ -422,7 +403,12 @@ public sealed class ConditionGroupEditor : UserControl
         nestedEditor.LoadGroup(nestedGroup, isRoot: false);
         nestedEditor.GroupChanged += () =>
         {
-            GroupChanged?.Invoke();
+            var updatedGroup = nestedEditor.GetGroup();
+            if (updatedGroup != null)
+            {
+                _vm.UpdateNestedGroup(nestedGroupId, updatedGroup);
+                GroupChanged?.Invoke();
+            }
         };
         nestedEditor.DeleteRequested += () =>
         {

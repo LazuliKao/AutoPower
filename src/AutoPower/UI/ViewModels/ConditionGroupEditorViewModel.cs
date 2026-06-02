@@ -152,6 +152,21 @@ public sealed class ConditionGroupEditorViewModel
     }
 
     /// <summary>
+    /// Updates a specific condition in the group.
+    /// </summary>
+    public void UpdateCondition(Guid conditionId, Func<StrategyCondition, StrategyCondition> updater)
+    {
+        if (Group.Value == null) return;
+
+        var updatedConditions = Group.Value.Conditions
+            .Select(c => c.Id == conditionId ? updater(c) : c)
+            .ToList();
+
+        Group.Value = Group.Value with { Conditions = updatedConditions };
+        UpdateDerivedState();
+    }
+
+    /// <summary>
     /// Adds a nested group to this group.
     /// </summary>
     public void AddNestedGroup()
@@ -177,6 +192,21 @@ public sealed class ConditionGroupEditorViewModel
 
         var updatedGroups = Group.Value.Groups
             .Where(g => g.Id != groupId)
+            .ToList();
+
+        Group.Value = Group.Value with { Groups = updatedGroups };
+        UpdateDerivedState();
+    }
+
+    /// <summary>
+    /// Updates a specific nested group in this group.
+    /// </summary>
+    public void UpdateNestedGroup(Guid groupId, StrategyConditionGroup updatedGroup)
+    {
+        if (Group.Value == null) return;
+
+        var updatedGroups = Group.Value.Groups
+            .Select(g => g.Id == groupId ? updatedGroup : g)
             .ToList();
 
         Group.Value = Group.Value with { Groups = updatedGroups };
@@ -218,12 +248,19 @@ public sealed class ConditionGroupEditorViewModel
             _ => "All",
         };
         
-        OperatorIndex.Value = Operator.Value switch
+        var targetIndex = Operator.Value switch
         {
             StrategyConditionGroupOperator.Any => 1,
             StrategyConditionGroupOperator.None => 2,
             _ => 0,
         };
+        
+        if (OperatorIndex.Value != targetIndex)
+        {
+            OperatorIndex.Value = targetIndex;
+        }
+
+        UpdateGroupFromState();
     }
 
     private void OnOperatorIndexChanged()

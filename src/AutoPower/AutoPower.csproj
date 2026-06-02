@@ -26,7 +26,6 @@
     <Compile Include="UI\ViewModels\DecisionTreeViewModel.cs" />
     <Compile Include="UI\ViewModels\ConditionGroupEditorViewModel.cs" />
     <Compile Include="UI\Components\ConditionGroupEditor.cs" />
-    <Compile Include="UI\Components\TreeViewEditor.cs" />
     <Compile Include="UI\Components\CardViewEditor.cs" />
     <Compile Include="UI\Components\FlowchartView.cs" />
     <Compile Include="UI\Components\DecisionTreeMutation.cs" />

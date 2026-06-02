@@ -14,11 +14,22 @@ namespace AutoPower.UI.Components;
 public sealed class DecisionTreeEditor : UserControl
 {
     private readonly DecisionTreeViewModel _vm;
+    private List<PowerPlanInfo> _availablePlans = new();
 
     // View components - initialized once, visibility toggled
-    private TreeViewEditor _treeEditor = null!;
     private CardViewEditor _cardEditor = null!;
     private FlowchartView _flowchartView = null!;
+
+    // Right-side Details Panel Container
+    private readonly Border _detailsPanelContainer = new Border();
+
+    // Details panel in-place updates tracking
+    private Guid? _detailsNodeId;
+    private bool _detailsNodeIsLeaf;
+    private bool _isUpdatingDetails;
+    private CheckBox? _detailsEnabledCheckBox;
+    private ComboBox? _detailsPlanComboBox;
+    private ConditionGroupEditor? _detailsConditionEditor;
 
     // Colors matching SettingsWindow theme
     private static readonly Color SurfaceCard = Color.FromHex("#1C2333");
@@ -27,10 +38,12 @@ public sealed class DecisionTreeEditor : UserControl
     private static readonly Color TextPrimary = Color.FromHex("#EAF0FF");
     private static readonly Color TextMuted = Color.FromHex("#9AA7BF");
     private static readonly Color AccentColor = Color.FromHex("#FF4F9A");
+    private static readonly Color ThenColor = Color.FromHex("#4CAF50");
+    private static readonly Color ElseColor = Color.FromHex("#FF9800");
+    private static readonly Color DangerColor = Color.FromHex("#D85A76");
 
     // Observable state for view mode selection
-    private readonly ObservableValue<bool> _treeViewSelected = new(true);
-    private readonly ObservableValue<bool> _cardViewSelected = new(false);
+    private readonly ObservableValue<bool> _cardViewSelected = new(true);
     private readonly ObservableValue<bool> _flowchartSelected = new(false);
     private readonly ObservableValue<bool> _jsonViewSelected = new(false);
     
@@ -38,8 +51,7 @@ public sealed class DecisionTreeEditor : UserControl
     private bool _isUpdatingViewSelection;
 
     // Observable state for view visibility
-    private readonly ObservableValue<bool> _treeViewVisible = new(true);
-    private readonly ObservableValue<bool> _cardViewVisible = new(false);
+    private readonly ObservableValue<bool> _cardViewVisible = new(true);
     private readonly ObservableValue<bool> _flowchartVisible = new(false);
     private readonly ObservableValue<bool> _jsonViewVisible = new(false);
     private readonly ObservableValue<string> _jsonPreviewText = new("No tree loaded");
@@ -64,24 +76,28 @@ public sealed class DecisionTreeEditor : UserControl
         _vm = new DecisionTreeViewModel();
 
         // Initialize view components with shared ViewModel
-        _treeEditor = new TreeViewEditor(_vm);
         _cardEditor = new CardViewEditor(_vm);
-        _flowchartView = new FlowchartView();
+        _flowchartView = new FlowchartView(_vm);
 
         // Wire up event forwarding from child editors
-        _treeEditor.TreeChanged += () => TreeChanged?.Invoke();
-        _treeEditor.NodeSelected += node => NodeSelected?.Invoke(node);
         _cardEditor.TreeChanged += () => TreeChanged?.Invoke();
         _cardEditor.NodeSelected += node => NodeSelected?.Invoke(node);
 
-        _treeEditor.TreeChanged += OnTreeContentChanged;
         _cardEditor.TreeChanged += OnTreeContentChanged;
 
         // Subscribe to view selection changes
-        _treeViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Tree));
         _cardViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Card));
         _flowchartSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Flowchart));
         _jsonViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Json));
+
+        // Subscribe to SelectedNode changes to update details panel
+        _vm.SelectedNode.Subscribe(OnSelectedNodeChanged);
+
+        // Subscribe to Root changes to update JSON preview automatically
+        _vm.Root.Subscribe(UpdateJsonPreview);
+
+        // Initialize details panel to default state
+        OnSelectedNodeChanged();
 
         Build();
     }
@@ -94,27 +110,31 @@ public sealed class DecisionTreeEditor : UserControl
         _vm = vm;
 
         // Initialize view components with shared ViewModel
-        _treeEditor = new TreeViewEditor(_vm);
         _cardEditor = new CardViewEditor(_vm);
-        _flowchartView = new FlowchartView();
+        _flowchartView = new FlowchartView(_vm);
 
         // Wire up event forwarding
-        _treeEditor.TreeChanged += () => TreeChanged?.Invoke();
-        _treeEditor.NodeSelected += node => NodeSelected?.Invoke(node);
         _cardEditor.TreeChanged += () => TreeChanged?.Invoke();
         _cardEditor.NodeSelected += node => NodeSelected?.Invoke(node);
 
-        _treeEditor.TreeChanged += OnTreeContentChanged;
         _cardEditor.TreeChanged += OnTreeContentChanged;
 
         // Subscribe to view selection changes
-        _treeViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Tree));
         _cardViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Card));
         _flowchartSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Flowchart));
         _jsonViewSelected.Subscribe(() => OnViewSelectionChanged(DecisionTreeViewMode.Json));
 
+        // Subscribe to SelectedNode changes to update details panel
+        _vm.SelectedNode.Subscribe(OnSelectedNodeChanged);
+
+        // Subscribe to Root changes to update JSON preview automatically
+        _vm.Root.Subscribe(UpdateJsonPreview);
+
         // Sync initial view mode from ViewModel
         SyncViewModeFromViewModel();
+
+        // Initialize details panel to default state
+        OnSelectedNodeChanged();
 
         Build();
     }
@@ -125,11 +145,23 @@ public sealed class DecisionTreeEditor : UserControl
     public void LoadTree(StrategyDecisionNode? root)
     {
         _vm.LoadTree(root);
-        _treeEditor.LoadTree(root);
-        _cardEditor.LoadTree(root);
-        _flowchartView.SetTree(root);
-        UpdateJsonPreview();
+        // Child editors rebuild themselves via subscription; rebuild container for view switch bar only
         Rebuild();
+    }
+
+    /// <summary>
+    /// Updates the tree, preserving the selected node's reference by ID.
+    /// </summary>
+    public void UpdateTree(StrategyDecisionNode? root)
+    {
+        _vm.UpdateTree(root);
+    }
+
+    public void SetAvailablePlans(List<PowerPlanInfo> plans)
+    {
+        _availablePlans = plans;
+        _cardEditor.SetAvailablePlans(plans);
+        OnSelectedNodeChanged();
     }
 
     /// <summary>
@@ -138,10 +170,7 @@ public sealed class DecisionTreeEditor : UserControl
     public void ClearTree()
     {
         _vm.ClearTree();
-        _treeEditor.ClearTree();
-        _cardEditor.ClearTree();
-        _flowchartView.ClearTree();
-        UpdateJsonPreview();
+        // Child editors rebuild themselves via subscription; rebuild container for view switch bar only
         Rebuild();
     }
 
@@ -151,16 +180,21 @@ public sealed class DecisionTreeEditor : UserControl
         var viewSwitchBar = BuildViewSwitchBar();
 
         // View containers with visibility binding
-        var treeContainer = new Border()
-            .Child(_treeEditor)
-            .BindIsVisible(_treeViewVisible);
-
         var cardContainer = new Border()
             .Child(_cardEditor)
             .BindIsVisible(_cardViewVisible);
 
         var flowchartContainer = new Border()
-            .Child(_flowchartView)
+            .Background(SurfaceCard)
+            .BorderBrush(BorderColor)
+            .BorderThickness(1)
+            .CornerRadius(8)
+            .Child(
+                new ScrollViewer()
+                    .VerticalScroll(ScrollMode.Auto)
+                    .HorizontalScroll(ScrollMode.Auto)
+                    .Content(_flowchartView)
+            )
             .BindIsVisible(_flowchartVisible);
 
         var jsonContainer = new Border()
@@ -172,6 +206,27 @@ public sealed class DecisionTreeEditor : UserControl
             .Child(BuildJsonPreview())
             .BindIsVisible(_jsonViewVisible);
 
+        // Grid for left-side views and right-side Details Panel
+        var workspaceGrid = new Grid()
+            .Columns("*,300")
+            .Spacing(12)
+            .Children(
+                // Left view: Stack of views (only one visible at a time)
+                new StackPanel()
+                    .Vertical()
+                    .Spacing(8)
+                    .Children(
+                        cardContainer,
+                        flowchartContainer,
+                        jsonContainer
+                    )
+                    .Column(0),
+
+                // Right view: Details panel
+                _detailsPanelContainer
+                    .Column(1)
+            );
+
         return new DockPanel()
             .Children(
                 // View switch bar docked at top
@@ -181,18 +236,11 @@ public sealed class DecisionTreeEditor : UserControl
                     .BorderBrush(BorderColor)
                     .BorderThickness(1)
                     .Padding(8, 6)
+                    .Margin(0, 0, 0, 8)
                     .Child(viewSwitchBar),
 
-                // View containers stacked (only one visible at a time)
-                new StackPanel()
-                    .Vertical()
-                    .Spacing(8)
-                    .Children(
-                        treeContainer,
-                        cardContainer,
-                        flowchartContainer,
-                        jsonContainer
-                    )
+                // Workspace Grid occupying the rest of space
+                workspaceGrid
             );
     }
 
@@ -212,7 +260,6 @@ public sealed class DecisionTreeEditor : UserControl
                     .Foreground(TextMuted)
                     .VerticalAlignment(VerticalAlignment.Center),
 
-                CreateViewRadioButton("Tree", _treeViewSelected),
                 CreateViewRadioButton("Card", _cardViewSelected),
                 CreateViewRadioButton("Flowchart", _flowchartSelected),
                 CreateViewRadioButton("JSON", _jsonViewSelected)
@@ -238,20 +285,6 @@ public sealed class DecisionTreeEditor : UserControl
     /// </summary>
     private UIElement BuildJsonPreview()
     {
-        var root = _vm.Root.Value;
-
-        if (root == null)
-        {
-            return new Label()
-                .Text("No tree loaded")
-                .FontFamily("Consolas")
-                .FontSize(11)
-                .Foreground(TextMuted);
-        }
-
-        // Generate JSON representation
-        var jsonText = GenerateJsonPreview(root);
-
         return new ScrollViewer()
             .VerticalScroll(ScrollMode.Auto)
             .HorizontalScroll(ScrollMode.Auto)
@@ -275,6 +308,11 @@ public sealed class DecisionTreeEditor : UserControl
         var sb = new System.Text.StringBuilder();
 
         sb.AppendLine($"{indentStr}{{");
+
+        if (!node.IsEnabled)
+        {
+            sb.AppendLine($"{indentStr}  \"enabled\": false,");
+        }
 
         if (node.If != null)
         {
@@ -332,7 +370,6 @@ public sealed class DecisionTreeEditor : UserControl
         _vm.CurrentView.Value = newMode;
 
         // Update visibility observables (only one visible)
-        _treeViewVisible.Value = newMode == DecisionTreeViewMode.Tree;
         _cardViewVisible.Value = newMode == DecisionTreeViewMode.Card;
         _flowchartVisible.Value = newMode == DecisionTreeViewMode.Flowchart;
         _jsonViewVisible.Value = newMode == DecisionTreeViewMode.Json;
@@ -365,7 +402,6 @@ public sealed class DecisionTreeEditor : UserControl
     /// </summary>
     private void UpdateRadioButtonStates(DecisionTreeViewMode mode)
     {
-        _treeViewSelected.Value = mode == DecisionTreeViewMode.Tree;
         _cardViewSelected.Value = mode == DecisionTreeViewMode.Card;
         _flowchartSelected.Value = mode == DecisionTreeViewMode.Flowchart;
         _jsonViewSelected.Value = mode == DecisionTreeViewMode.Json;
@@ -378,12 +414,10 @@ public sealed class DecisionTreeEditor : UserControl
     {
         var mode = _vm.CurrentView.Value;
 
-        _treeViewSelected.Value = mode == DecisionTreeViewMode.Tree;
         _cardViewSelected.Value = mode == DecisionTreeViewMode.Card;
         _flowchartSelected.Value = mode == DecisionTreeViewMode.Flowchart;
         _jsonViewSelected.Value = mode == DecisionTreeViewMode.Json;
 
-        _treeViewVisible.Value = mode == DecisionTreeViewMode.Tree;
         _cardViewVisible.Value = mode == DecisionTreeViewMode.Card;
         _flowchartVisible.Value = mode == DecisionTreeViewMode.Flowchart;
         _jsonViewVisible.Value = mode == DecisionTreeViewMode.Json;
@@ -398,6 +432,355 @@ public sealed class DecisionTreeEditor : UserControl
     {
         var root = _vm.Root.Value;
         _jsonPreviewText.Value = root == null ? "No tree loaded" : GenerateJsonPreview(root);
+    }
+
+    /// <summary>
+    /// Rebuilds the Details Panel content when the selected node changes.
+    /// </summary>
+    private void OnSelectedNodeChanged()
+    {
+        var node = _vm.SelectedNode.Value;
+        if (node == null)
+        {
+            _detailsNodeId = null;
+            _detailsEnabledCheckBox = null;
+            _detailsPlanComboBox = null;
+            _detailsConditionEditor = null;
+            _detailsPanelContainer.Child = BuildDetailsPanelContent(null);
+            return;
+        }
+
+        var isLeaf = node.Then == null && node.Else == null;
+        if (_detailsNodeId == node.Id && _detailsNodeIsLeaf == isLeaf)
+        {
+            // Update in-place to avoid rebuilding and losing focus
+            _isUpdatingDetails = true;
+            try
+            {
+                if (_detailsEnabledCheckBox != null)
+                {
+                    _detailsEnabledCheckBox.IsChecked(node.IsEnabled);
+                }
+
+                if (isLeaf)
+                {
+                    if (_detailsPlanComboBox != null)
+                    {
+                        var selectedIndex = _availablePlans.FindIndex(p => p.Guid == node.PlanGuid);
+                        if (selectedIndex >= 0 && _detailsPlanComboBox.SelectedIndex != selectedIndex)
+                        {
+                            _detailsPlanComboBox.SelectedIndex(selectedIndex);
+                        }
+                    }
+                }
+                else
+                {
+                    if (_detailsConditionEditor != null)
+                    {
+                        _detailsConditionEditor.LoadGroup(node.If, isRoot: true);
+                    }
+                }
+            }
+            finally
+            {
+                _isUpdatingDetails = false;
+            }
+        }
+        else
+        {
+            _detailsPanelContainer.Child = BuildDetailsPanelContent(node);
+        }
+    }
+
+    /// <summary>
+    /// Constructs the Visual Element for the Node Details panel.
+    /// </summary>
+    private UIElement BuildDetailsPanelContent(StrategyDecisionNode? node)
+    {
+        if (node == null)
+        {
+            _detailsNodeId = null;
+            _detailsEnabledCheckBox = null;
+            _detailsPlanComboBox = null;
+            _detailsConditionEditor = null;
+
+            return new Border()
+                .Background(SurfaceCard)
+                .BorderBrush(BorderColor)
+                .BorderThickness(1)
+                .CornerRadius(8)
+                .Padding(16)
+                .Child(
+                    new StackPanel()
+                        .Vertical()
+                        .Spacing(12)
+                        .Center()
+                        .Children(
+                            new Label()
+                                .Text("No Selection")
+                                .FontFamily("Bahnschrift")
+                                .FontSize(13)
+                                .SemiBold()
+                                .Foreground(TextMuted)
+                                .HorizontalAlignment(HorizontalAlignment.Center),
+                            new Label()
+                                .Text("Select a node in the tree or flowchart to edit its rules and actions.")
+                                .FontFamily("Consolas")
+                                .FontSize(10)
+                                .Foreground(TextMuted)
+                                .TextWrapping(TextWrapping.Wrap)
+                                .HorizontalAlignment(HorizontalAlignment.Center)
+                        )
+                );
+        }
+
+        _detailsNodeId = node.Id;
+        _detailsNodeIsLeaf = node.Then == null && node.Else == null;
+
+        var isRoot = _vm.Root.Value?.Id == node.Id;
+        var isLeaf = _detailsNodeIsLeaf;
+
+        var headerRow = new StackPanel()
+            .Horizontal()
+            .Spacing(8)
+            .Children(
+                new Border()
+                    .Background(node.PlanGuid.HasValue ? AccentColor : Color.FromHex("#2196F3"))
+                    .CornerRadius(4)
+                    .Padding(6, 2)
+                    .Child(
+                        new Label()
+                            .Text(node.PlanGuid.HasValue ? "Plan Node" : "IF Branch")
+                            .FontFamily("Bahnschrift")
+                            .FontSize(10)
+                            .SemiBold()
+                            .Foreground(Color.White)
+                    ),
+                new Label()
+                    .Text($"ID: {node.Id.ToString()[..8]}")
+                    .FontFamily("Consolas")
+                    .FontSize(10)
+                    .Foreground(TextMuted)
+                    .VerticalAlignment(VerticalAlignment.Center)
+            );
+
+        _detailsEnabledCheckBox = new CheckBox()
+            .Content("Enabled")
+            .IsChecked(node.IsEnabled)
+            .Foreground(TextPrimary)
+            .FontFamily("Consolas")
+            .FontSize(11)
+            .OnCheckedChanged(isChecked =>
+            {
+                if (_isUpdatingDetails) return;
+                var root = _vm.Root.Value;
+                if (root == null) return;
+                var updated = DecisionTreeMutation.SetIsEnabled(root, node.Id, isChecked, out var changed);
+                if (!changed) return;
+                UpdateTree(updated);
+                TreeChanged?.Invoke();
+            });
+
+        var children = new List<Element> {
+            headerRow,
+            new Border().Height(1).Background(BorderColor).Margin(0, 4),
+            _detailsEnabledCheckBox
+        };
+
+        if (!isLeaf)
+        {
+            // Branch node: show condition group editor
+            _detailsConditionEditor = new ConditionGroupEditor();
+            _detailsConditionEditor.LoadGroup(node.If, isRoot: true);
+            _detailsConditionEditor.GroupChanged += () =>
+            {
+                if (_isUpdatingDetails) return;
+                var root = _vm.Root.Value;
+                if (root == null) return;
+                var updatedGroup = _detailsConditionEditor.GetGroup();
+                var updated = DecisionTreeMutation.SetIf(root, node.Id, updatedGroup, out var changed);
+                if (changed)
+                {
+                    UpdateTree(updated);
+                    TreeChanged?.Invoke();
+                }
+            };
+
+            children.Add(new Label().Text("Conditions:").FontFamily("Bahnschrift").FontSize(11).Foreground(TextMuted).Margin(0, 8, 0, 4));
+            children.Add(_detailsConditionEditor);
+
+            // Add branch buttons
+            var addThenBtn = new Button()
+                .Content("+ Add THEN Branch")
+                .Height(26)
+                .Background(SurfaceInput)
+                .Foreground(ThenColor)
+                .BorderBrush(ThenColor)
+                .BorderThickness(1)
+                .FontFamily("Bahnschrift")
+                .FontSize(10)
+                .SemiBold()
+                .OnCanClick(() => node.Then == null)
+                .OnClick(() => {
+                    var root = _vm.Root.Value;
+                    if (root == null) return;
+                    var updated = DecisionTreeMutation.AddThenBranch(root, node.Id, new StrategyDecisionNode { If = StrategyConditionGroup.MatchAll(), IsEnabled = true }, out var changed);
+                    if (changed) {
+                        var selected = DecisionTreeMutation.FindNodeById(updated, node.Id)?.Then;
+                        _vm.SelectNode(selected);
+                        UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                });
+
+            var addElseBtn = new Button()
+                .Content("+ Add ELSE Branch")
+                .Height(26)
+                .Background(SurfaceInput)
+                .Foreground(ElseColor)
+                .BorderBrush(ElseColor)
+                .BorderThickness(1)
+                .FontFamily("Bahnschrift")
+                .FontSize(10)
+                .SemiBold()
+                .OnCanClick(() => node.Then != null && node.Else == null)
+                .OnClick(() => {
+                    var root = _vm.Root.Value;
+                    if (root == null) return;
+                    var updated = DecisionTreeMutation.AddElseBranch(root, node.Id, new StrategyDecisionNode { If = StrategyConditionGroup.MatchAll(), IsEnabled = true }, out var changed);
+                    if (changed) {
+                        var selected = DecisionTreeMutation.FindNodeById(updated, node.Id)?.Else;
+                        _vm.SelectNode(selected);
+                        UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                });
+
+            children.Add(new Border().Height(1).Background(BorderColor).Margin(0, 8));
+            children.Add(new Label().Text("Branch Operations:").FontFamily("Bahnschrift").FontSize(11).Foreground(TextMuted).Margin(0, 4));
+            children.Add(new StackPanel().Horizontal().Spacing(8).Children(addThenBtn, addElseBtn));
+        }
+        else
+        {
+            // Leaf node: show plan picker ComboBox and convert to branch button
+            var planLabel = new Label()
+                .Text("Target Power Plan:")
+                .FontFamily("Bahnschrift")
+                .FontSize(11)
+                .Foreground(TextMuted)
+                .Margin(0, 8, 0, 4);
+
+            _detailsPlanComboBox = new ComboBox()
+                .Height(30)
+                .Width(260)
+                .Padding(8, 4)
+                .Background(SurfaceInput)
+                .Foreground(TextPrimary)
+                .BorderBrush(BorderColor)
+                .BorderThickness(1)
+                .FontFamily("Consolas");
+
+            var planNames = _availablePlans.Select(p => p.Name).ToArray();
+            _detailsPlanComboBox.Items(planNames);
+            var selectedIndex = _availablePlans.FindIndex(p => p.Guid == node.PlanGuid);
+            if (selectedIndex >= 0)
+            {
+                _detailsPlanComboBox.SelectedIndex(selectedIndex);
+            }
+
+            _detailsPlanComboBox.SelectionChanged += _ =>
+            {
+                if (_isUpdatingDetails) return;
+                var idx = _detailsPlanComboBox.SelectedIndex;
+                if (idx >= 0 && idx < _availablePlans.Count)
+                {
+                    var updated = DecisionTreeMutation.SetPlanGuid(_vm.Root.Value!, node.Id, _availablePlans[idx].Guid, out var changed);
+                    if (changed)
+                    {
+                        UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                }
+            };
+
+            var convertBtn = new Button()
+                .Content("+ Convert to IF-THEN Branch")
+                .Height(28)
+                .Background(SurfaceInput)
+                .Foreground(Color.FromHex("#2196F3"))
+                .BorderBrush(Color.FromHex("#2196F3"))
+                .BorderThickness(1)
+                .FontFamily("Bahnschrift")
+                .FontSize(11)
+                .SemiBold()
+                .OnClick(() => {
+                    var root = _vm.Root.Value;
+                    if (root == null) return;
+                    var updated = DecisionTreeMutation.AddThenBranch(
+                        root,
+                        node.Id,
+                        new StrategyDecisionNode { PlanGuid = node.PlanGuid, IsEnabled = true },
+                        out var changed);
+
+                    if (changed) {
+                        var selected = DecisionTreeMutation.FindNodeById(updated, node.Id);
+                        _vm.SelectNode(selected);
+                        UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                });
+
+            children.Add(planLabel);
+            children.Add(_detailsPlanComboBox);
+            children.Add(new Border().Height(1).Background(BorderColor).Margin(0, 12));
+            children.Add(convertBtn);
+        }
+
+        if (!isRoot)
+        {
+            var deleteBtn = new Button()
+                .Content("Delete Node")
+                .Height(30)
+                .Background(SurfaceInput)
+                .Foreground(DangerColor)
+                .BorderBrush(DangerColor)
+                .BorderThickness(1)
+                .FontFamily("Bahnschrift")
+                .FontSize(11)
+                .SemiBold()
+                .OnClick(() => {
+                    var root = _vm.Root.Value;
+                    if (root == null) return;
+                    var updated = DecisionTreeMutation.DeleteNode(root, node.Id, out var deleted);
+                    if (deleted)
+                    {
+                        _vm.SelectNode(null);
+                        UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                });
+
+            children.Add(new Border().Height(1).Background(BorderColor).Margin(0, 12));
+            children.Add(deleteBtn);
+        }
+
+        return new Border()
+            .Background(SurfaceCard)
+            .BorderBrush(BorderColor)
+            .BorderThickness(1)
+            .CornerRadius(8)
+            .Padding(12)
+            .Child(
+                new ScrollViewer()
+                    .VerticalScroll(ScrollMode.Auto)
+                    .HorizontalScroll(ScrollMode.Disabled)
+                    .Content(
+                        new StackPanel()
+                            .Vertical()
+                            .Spacing(8)
+                            .Children(children.ToArray())
+                    )
+            );
     }
 
     private void Rebuild()

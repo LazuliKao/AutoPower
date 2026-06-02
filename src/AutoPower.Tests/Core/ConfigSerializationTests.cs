@@ -104,7 +104,7 @@ public class ConfigSerializationTests
         var deserialized = JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig);
 
         Assert.NotNull(deserialized);
-        Assert.Equal(3, deserialized.SchemaVersion);
+        Assert.Equal(5, deserialized.SchemaVersion);
         Assert.Equal(DetectionMode.Both, deserialized.Mode);
         Assert.Equal(5, deserialized.IdleTimeoutMinutes);
         Assert.Null(deserialized.DefaultPlanGuid);

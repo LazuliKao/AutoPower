@@ -1,0 +1,113 @@
+{
+  "App": {
+    "Title": "AutoPower"
+  },
+  "Language": {
+    "Label": "Language",
+    "Desc": "Display language for the application. Changes take effect after restarting settings.",
+    "English": "English",
+    "ChineseSimplified": "简体中文",
+    "ChineseTraditional": "繁體中文",
+    "SystemDefault": "System Default"
+  },
+  "Tray": {
+    "StatusActive": "Status: Active",
+    "StatusIdle": "Status: Idle",
+    "StatusOverride": "Status: Override",
+    "StatusUnknown": "Status: Unknown",
+    "Settings": "Settings...",
+    "ClearOverride": "Clear Override",
+    "Exit": "Exit"
+  },
+  "Settings": {
+    "Title": "AutoPower Settings",
+    "Subtitle": "Industrial dark control surface for power strategy and overrides",
+    "Loading": "Loading...",
+    "Save": "Save"
+  },
+  "Tabs": {
+    "General": "General",
+    "Interface": "Interface",
+    "Schedule": "Schedule",
+    "Override": "Override",
+    "Preview": "Preview",
+    "About": "About"
+  },
+  "Interface": {
+    "Title": "Interface",
+    "TitleDesc": "Language, theme, and display scaling preferences.",
+    "ThemeLabel": "Theme",
+    "ThemeDesc": "Choose light, dark, or follow the system setting.",
+    "ThemeSystem": "System",
+    "ThemeLight": "Light",
+    "ThemeDark": "Dark",
+    "ScaleLabel": "Display Scale",
+    "ScaleDesc": "Adjust the UI font and control size. 100% is the default.",
+    "ScalePercent": "{0}%",
+    "ScaleRestartNotice": "Display scale changes take effect after restarting the application."
+  },
+  "General": {
+    "DetectionStrategy": "Detection Strategy",
+    "DetectionStrategyDesc": "Select which runtime detectors are available to rule conditions and fallback.",
+    "ModeKeyboardMouse": "Keyboard/Mouse",
+    "ModeMonitorSleep": "Monitor Sleep",
+    "ModeBoth": "Both",
+    "PowerTransition": "Power Transition",
+    "PowerTransitionDesc": "Tune idle threshold and map plans for rule default and final fallback.",
+    "IdleTimeoutLabel": "Idle timeout (minutes)",
+    "IdleTimeoutPlaceholder": "Minutes",
+    "DefaultPlan": "Default plan",
+    "NoneOption": "None",
+    "ActiveFallbackPlan": "Active fallback plan",
+    "IdleFallbackPlan": "Idle fallback plan",
+    "Startup": "Startup",
+    "StartupDesc": "Control integration with Windows startup.",
+    "AutoStart": "Start AutoPower when Windows starts"
+  },
+  "Schedule": {
+    "DecisionTreeStrategy": "Decision Tree Strategy",
+    "DecisionTreeDesc": "IF-THEN-ELSE decision tree for power plan selection. Each node evaluates a condition group and branches accordingly.",
+    "NodeConfigured": "{0} nodes configured",
+    "NodeConfiguredSingular": "1 node configured"
+  },
+  "Override": {
+    "ManualOverride": "Manual Override",
+    "ManualOverrideDesc": "Force a temporary plan regardless of automatic strategy.",
+    "OverridePlan": "Override plan",
+    "DurationLabel": "Duration (minutes)",
+    "DurationPlaceholder": "Minutes",
+    "SetOverride": "Set Override",
+    "ClearOverride": "Clear Override",
+    "OverrideActive": "Override Active (Expires: {0})",
+    "NoOverrideActive": "No Override Active",
+    "NotificationOverrideActive": "Override Active",
+    "NotificationForced": "Forced '{0}' for {1} minutes",
+    "NotificationFailed": "Failed to Set Override",
+    "NotificationInvalidDuration": "Invalid duration entered.",
+    "NotificationNoPlan": "No plan selected.",
+    "NotificationCleared": "Override Cleared",
+    "NotificationResumed": "Resumed automatic plan management."
+  },
+  "Preview": {
+    "TimelinePreview": "Timeline Preview",
+    "TimelinePreviewDesc": "Preview uses the selected detector snapshot below. Detector-based rules are runtime-dependent and not future-guaranteed.",
+    "AssumeKeyboardMouseIdle": "Assume keyboard/mouse is idle",
+    "AssumeMonitorOff": "Assume monitor is off",
+    "NoTransitions": "No upcoming plan transitions in the next 24 hours.",
+    "UntilEndOfPreview": "until end of preview"
+  },
+  "About": {
+    "Version": "Version {0}",
+    "Description": "Automatic power plan management for Windows",
+    "Tagline": "Smartly switches plans based on idle detection and schedule rules.",
+    "BuiltWith": "Built with Aprillz.MewUI"
+  },
+  "Duration": {
+    "LessThanOneMin": "< 1 min",
+    "Minutes": "{0} min",
+    "HoursMinutes": "{0}h {1}m",
+    "Hours": "{0}h",
+    "DaysHours": "{0}d {1}h",
+    "Days": "{0}d"
+  }
+}

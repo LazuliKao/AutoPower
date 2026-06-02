@@ -1,6 +1,10 @@
 using System.Runtime.Versioning;
 using AutoPower.Core.Core;
+using AutoPower.Core.Core.Models;
 using AutoPower.Core.Infrastructure;
+using System.Globalization;
+using Aprillz.MewUI;
+using AutoPower.Core.Localization;
 using AutoPower.Core.Power;
 using AutoPower.UI;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
@@ -42,6 +46,9 @@ LoggerService.Info("AutoPower starting...");
 try
 {
     using var controller = new AppController();
+    // Apply saved preferences (scale must be set before UI)
+    ApplyScale(controller.Config);
+    ApplyLanguageAndTheme(controller.Config);
     using var tray = new TrayIcon();
     var settingsWindow = new Lazy<SettingsWindow>(() =>
     {
@@ -50,12 +57,12 @@ try
         {
             ConfigService.Save(config);
             controller.ReloadConfig();
+            ApplyLanguageAndTheme(config);
         };
         w.OnNotificationRequested += (title, message) =>
         {
             tray.ShowBalloon(title, message);
         };
-
         return w;
     });
     var exitSignal = new ManualResetEventSlim(false);
@@ -109,4 +116,39 @@ try
 catch (Exception ex)
 {
     LoggerService.Error("Unhandled exception in main loop", ex);
+}
+static void ApplyScale(AppConfig config)
+{
+    var pct = config.ScalePercent ?? 100;
+    if (pct == 100) return;
+    var factor = pct / 100.0;
+    var baseMetrics = ThemeMetrics.Default;
+    ThemeManager.DefaultMetrics = baseMetrics with
+    {
+        FontSize = baseMetrics.FontSize * factor,
+        BaseControlHeight = (int)(baseMetrics.BaseControlHeight * factor),
+    };
+}
+
+static void ApplyLanguageAndTheme(AppConfig config)
+{
+    // Language
+    if (!string.IsNullOrEmpty(config.Language))
+    {
+        try { CultureInfo.CurrentUICulture = new CultureInfo(config.Language); }
+        catch (CultureNotFoundException) { LoggerService.Warn($"Invalid language: {config.Language}"); }
+    }
+
+    // Theme
+    try
+    {
+        var variant = config.Theme switch
+        {
+            "Light" => ThemeVariant.Light,
+            "Dark" => ThemeVariant.Dark,
+            _ => ThemeVariant.System,
+        };
+        Application.Current?.SetTheme(variant);
+    }
+    catch (Exception ex) { LoggerService.Warn($"Failed to apply theme: {ex.Message}"); }
 }

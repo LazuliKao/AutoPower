@@ -1,0 +1,113 @@
+{
+  "App": {
+    "Title": "AutoPower"
+  },
+  "Language": {
+    "Label": "語言",
+    "Desc": "應用程式的顯示語言。變更將在重新開啟設定後生效。",
+    "English": "English",
+    "ChineseSimplified": "简体中文",
+    "ChineseTraditional": "繁體中文",
+    "SystemDefault": "跟隨系統"
+  },
+  "Tray": {
+    "StatusActive": "狀態: 活動",
+    "StatusIdle": "狀態: 閒置",
+    "StatusOverride": "狀態: 手動覆蓋",
+    "StatusUnknown": "狀態: 未知",
+    "Settings": "設定...",
+    "ClearOverride": "清除覆蓋",
+    "Exit": "結束"
+  },
+  "Settings": {
+    "Title": "AutoPower 設定",
+    "Subtitle": "電源策略與覆蓋的工業風格控制面板",
+    "Loading": "載入中...",
+    "Save": "儲存"
+  },
+  "Tabs": {
+    "General": "一般",
+    "Interface": "介面",
+    "Schedule": "排程",
+    "Override": "覆蓋",
+    "Preview": "預覽",
+    "About": "關於"
+  },
+  "Interface": {
+    "Title": "介面",
+    "TitleDesc": "語言、主題和顯示縮放偏好。",
+    "ThemeLabel": "主題",
+    "ThemeDesc": "選擇淺色、深色或跟隨系統設定。",
+    "ThemeSystem": "跟隨系統",
+    "ThemeLight": "淺色",
+    "ThemeDark": "深色",
+    "ScaleLabel": "顯示縮放",
+    "ScaleDesc": "調整介面字型和控制項大小。100% 為預設值。",
+    "ScalePercent": "{0}%",
+    "ScaleRestartNotice": "顯示縮放變更將在重新啟動應用程式後生效。"
+  },
+  "General": {
+    "DetectionStrategy": "偵測策略",
+    "DetectionStrategyDesc": "選擇規則條件和回退可用的執行時期偵測器。",
+    "ModeKeyboardMouse": "鍵盤/滑鼠",
+    "ModeMonitorSleep": "顯示器休眠",
+    "ModeBoth": "兩者",
+    "PowerTransition": "電源切換",
+    "PowerTransitionDesc": "調整閒置閾值並映射規則預設和最終回退的電源計劃。",
+    "IdleTimeoutLabel": "閒置逾時（分鐘）",
+    "IdleTimeoutPlaceholder": "分鐘",
+    "DefaultPlan": "預設計劃",
+    "NoneOption": "無",
+    "ActiveFallbackPlan": "活動回退計劃",
+    "IdleFallbackPlan": "閒置回退計劃",
+    "Startup": "啟動",
+    "StartupDesc": "控制與 Windows 啟動的整合。",
+    "AutoStart": "Windows 啟動時自動執行 AutoPower"
+  },
+  "Schedule": {
+    "DecisionTreeStrategy": "決策樹策略",
+    "DecisionTreeDesc": "用於電源計劃選擇的 IF-THEN-ELSE 決策樹。每個節點評估一個條件組並相應分支。",
+    "NodeConfigured": "已設定 {0} 個節點",
+    "NodeConfiguredSingular": "已設定 1 個節點"
+  },
+  "Override": {
+    "ManualOverride": "手動覆蓋",
+    "ManualOverrideDesc": "強制臨時計劃，忽略自動策略。",
+    "OverridePlan": "覆蓋計劃",
+    "DurationLabel": "持續時間（分鐘）",
+    "DurationPlaceholder": "分鐘",
+    "SetOverride": "設定覆蓋",
+    "ClearOverride": "清除覆蓋",
+    "OverrideActive": "覆蓋已啟用（到期: {0}）",
+    "NoOverrideActive": "無覆蓋啟用",
+    "NotificationOverrideActive": "覆蓋已啟用",
+    "NotificationForced": "已強制 '{0}' 持續 {1} 分鐘",
+    "NotificationFailed": "設定覆蓋失敗",
+    "NotificationInvalidDuration": "輸入的持續時間無效。",
+    "NotificationNoPlan": "未選擇計劃。",
+    "NotificationCleared": "覆蓋已清除",
+    "NotificationResumed": "已恢復自動計劃管理。"
+  },
+  "Preview": {
+    "TimelinePreview": "時間軸預覽",
+    "TimelinePreviewDesc": "預覽使用下方選定的偵測器快照。基於偵測器的規則依賴於執行時期，不保證未來行為。",
+    "AssumeKeyboardMouseIdle": "假設鍵盤/滑鼠閒置",
+    "AssumeMonitorOff": "假設顯示器關閉",
+    "NoTransitions": "未來 24 小時內無即將到來的計劃切換。",
+    "UntilEndOfPreview": "直到預覽結束"
+  },
+  "About": {
+    "Version": "版本 {0}",
+    "Description": "Windows 自動電源計劃管理",
+    "Tagline": "基於閒置偵測和排程規則智慧切換計劃。",
+    "BuiltWith": "使用 Aprillz.MewUI 建構"
+  },
+  "Duration": {
+    "LessThanOneMin": "< 1 分鐘",
+    "Minutes": "{0} 分鐘",
+    "HoursMinutes": "{0}小時 {1}分",
+    "Hours": "{0}小時",
+    "DaysHours": "{0}天 {1}小時",
+    "Days": "{0}天"
+  }
+}

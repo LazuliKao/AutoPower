@@ -4,13 +4,14 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 using AutoPower.Core.Core.Models;
+using AutoPower.UI.ViewModels;
 
 namespace AutoPower.UI.Components;
 
 /// <summary>
-/// Read-only flowchart visualization for decision trees.
+/// Flowchart visualization for decision trees.
 /// Renders nodes as rectangles connected by lines with THEN/ELSE labels.
-/// This is a display-only control - no editing or interaction for modification.
+/// Supports clicking nodes to select them.
 /// </summary>
 public sealed class FlowchartView : Control
 {
@@ -22,6 +23,7 @@ public sealed class FlowchartView : Control
     private static readonly Color ThenColor = Color.FromHex("#4CAF50");   // Green for THEN branch
     private static readonly Color ElseColor = Color.FromHex("#FF9800");   // Orange for ELSE branch
     private static readonly Color LeafColor = Color.FromHex("#5C6BC0");   // Indigo for leaf nodes
+    private static readonly Color AccentColor = Color.FromHex("#FF4F9A"); // Pink highlight color
 
     // Layout constants
     private const double NodeWidth = 160.0;
@@ -32,12 +34,23 @@ public sealed class FlowchartView : Control
     private const double NodeCornerRadius = 6.0;
     private const double LayoutPadding = 20.0;
 
+    // View model for selection tracking
+    private readonly DecisionTreeViewModel _vm;
+
     // Tree data
     private StrategyDecisionNode? _root;
     private readonly Dictionary<Guid, Rect> _nodePositions = new();
     private readonly List<(Point From, Point To, string Label, Color Color)> _edges = new();
     private double _treeWidth;
     private double _treeHeight;
+
+    public FlowchartView(DecisionTreeViewModel vm)
+    {
+        _vm = vm;
+        // Redraw flowchart when root or selected node changes
+        _vm.Root.Subscribe(() => SetTree(_vm.Root.Value));
+        _vm.SelectedNode.Subscribe(InvalidateVisual);
+    }
 
     /// <summary>
     /// Sets the decision tree root to visualize.
@@ -77,6 +90,39 @@ public sealed class FlowchartView : Control
     }
 
     /// <inheritdoc />
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+
+        if (!IsEffectivelyEnabled || e.Button != MouseButton.Left)
+        {
+            return;
+        }
+
+        if (_root == null || _nodePositions.Count == 0)
+        {
+            return;
+        }
+
+        // Perform hit testing on node positions (which are in control-relative coordinates)
+        foreach (var (id, rect) in _nodePositions)
+        {
+            if (rect.Contains(e.GetPosition(this)))
+            {
+                var node = FindNode(_root, id);
+                if (node != null)
+                {
+                    _vm.SelectNode(node);
+                    Focus();
+                    InvalidateVisual();
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc />
     protected override void OnRender(IGraphicsContext context)
     {
         base.OnRender(context);
@@ -92,7 +138,10 @@ public sealed class FlowchartView : Control
         // Draw edges first (below nodes)
         foreach (var (from, to, label, color) in _edges)
         {
-            DrawEdge(context, from, to, label, color, dpiScale);
+            // Offset coordinates by Bounds top-left for parent-relative drawing
+            var offsetFrom = new Point(from.X + bounds.X, from.Y + bounds.Y);
+            var offsetTo = new Point(to.X + bounds.X, to.Y + bounds.Y);
+            DrawEdge(context, offsetFrom, offsetTo, label, color, dpiScale);
         }
 
         // Draw nodes on top
@@ -101,7 +150,9 @@ public sealed class FlowchartView : Control
             var node = FindNode(_root, id);
             if (node != null)
             {
-                DrawNode(context, rect, node, dpiScale);
+                // Offset rect coordinates by Bounds top-left for parent-relative drawing
+                var offsetRect = new Rect(rect.X + bounds.X, rect.Y + bounds.Y, rect.Width, rect.Height);
+                DrawNode(context, offsetRect, node, dpiScale);
             }
         }
     }
@@ -117,11 +168,11 @@ public sealed class FlowchartView : Control
     {
         _nodePositions.Clear();
         _edges.Clear();
+        _treeWidth = 0;
+        _treeHeight = 0;
 
         if (_root == null)
         {
-            _treeWidth = 0;
-            _treeHeight = 0;
             return;
         }
 
@@ -238,12 +289,16 @@ public sealed class FlowchartView : Control
         // Determine node color based on type
         var isLeaf = node.Then == null && node.Else == null;
         var bgColor = isLeaf ? LeafColor : SurfaceCard;
-        var borderColor = isLeaf ? LeafColor : BorderColor;
+
+        // Highlight selected node
+        var isSelected = _vm.SelectedNode.Value?.Id == node.Id;
+        var borderThickness = isSelected ? 2.0 : 1.0;
+        var borderColor = isSelected ? AccentColor : (isLeaf ? LeafColor : BorderColor);
 
         // Draw background
         context.FillRectangle(snappedRect, bgColor);
         // Draw border
-        context.DrawRectangle(snappedRect, borderColor, 1.0);
+        context.DrawRectangle(snappedRect, borderColor, borderThickness);
 
         // Draw node label
         var font = GetFont();

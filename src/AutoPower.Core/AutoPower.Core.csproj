@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +15,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AutoPower.SourceGenerator\AutoPower.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      SetTargetFramework="TargetFramework=netstandard2.0"
+                      SkipGetTargetFrameworkProperties="true"
+                      GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;OutputType" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="Localization\Strings_*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Localization\Strings.cs" />
     <Compile Include="Core\AppController.cs" />
     <Compile Include="Core\ConfigService.cs" />
     <Compile Include="Core\Models\*.cs" />
@@ -29,5 +44,6 @@
     <Compile Include="Infrastructure\Win32\User32.cs" />
     <Compile Include="Infrastructure\Win32\PowrProf.cs" />
   </ItemGroup>
+
 
 </Project>

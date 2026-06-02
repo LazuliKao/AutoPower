@@ -1,8 +1,10 @@
 using System.Linq;
+using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Diagnostics;
 using AutoPower.Core.Core.Models;
+using AutoPower.Core.Localization;
 using AutoPower.Core.Infrastructure;
 using AutoPower.Core.Strategy;
 using AutoPower.UI.Components;
@@ -35,6 +37,10 @@ internal sealed class SettingsWindow
     private ComboBox? _idlePlanComboBox;
     private ComboBox? _defaultPlanComboBox;
     private CheckBox? _autoStartCheckBox;
+    private ComboBox? _languageComboBox;
+    private ComboBox? _themeComboBox;
+    private Slider? _scaleSlider;
+    private Label? _scaleLabel;
 
     private DecisionTreeEditor? _decisionTreeEditor;
 
@@ -64,7 +70,7 @@ internal sealed class SettingsWindow
 
         _window = new Window()
             .Padding(0)
-            .Title("AutoPower Settings")
+            .Title(Strings.SettingsTitle)
             .Resizable(600, 660)
             .Content(CreateContent());
 
@@ -84,11 +90,12 @@ internal sealed class SettingsWindow
     private Element CreateContent()
     {
         var tabControl = new TabControl().TabItems(
-            new TabItem().Header("General").Content(CreateGeneralTabContent()),
-            new TabItem().Header("Schedule").Content(CreateScheduleTabContent()),
-            new TabItem().Header("Override").Content(CreateOverrideTabContent()),
-            new TabItem().Header("Preview").Content(CreatePreviewTabContent()),
-            new TabItem().Header("About").Content(CreateAboutTabContent())
+            new TabItem().Header(Strings.TabsGeneral).Content(CreateGeneralTabContent()),
+            new TabItem().Header(Strings.TabsInterface).Content(CreateInterfaceTabContent()),
+            new TabItem().Header(Strings.TabsSchedule).Content(CreateScheduleTabContent()),
+            new TabItem().Header(Strings.TabsOverride).Content(CreateOverrideTabContent()),
+            new TabItem().Header(Strings.TabsPreview).Content(CreatePreviewTabContent()),
+            new TabItem().Header(Strings.TabsAbout).Content(CreateAboutTabContent())
         );
 
         tabControl
@@ -97,7 +104,7 @@ internal sealed class SettingsWindow
             .BorderThickness(1)
             .Foreground(TextPrimary);
 
-        var saveButton = CreatePrimaryButton("Save", OnSaveClicked).Width(128);
+        var saveButton = CreatePrimaryButton(Strings.SettingsSave, OnSaveClicked).Width(128);
 
         var shell = new DockPanel().Children(
             new Border()
@@ -115,17 +122,17 @@ internal sealed class SettingsWindow
                             .Spacing(4)
                             .Children(
                                 new Label()
-                                    .Text("AutoPower Settings")
+                                    .Text(Strings.SettingsTitle)
                                     .FontSize(21)
                                     .Bold()
-                                    .FontFamily("Bahnschrift")
+                                    .FontFamily("Microsoft YaHei")
                                     .Foreground(TextPrimary),
                                 new Label()
                                     .Text(
-                                        "Industrial dark control surface for power strategy and overrides"
+                                        Strings.SettingsSubtitle
                                     )
                                     .FontSize(11)
-                                    .FontFamily("Consolas")
+                                    .FontFamily("Microsoft YaHei")
                                     .Foreground(TextMuted)
                             )
                     )
@@ -146,7 +153,7 @@ internal sealed class SettingsWindow
             .Child(
                 new TextBlock()
                 {
-                    Text = "Loading...",
+                    Text = Strings.SettingsLoading,
                     FontSize = 40,
                     VerticalTextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -175,31 +182,31 @@ internal sealed class SettingsWindow
     private Element CreateGeneralTabContent()
     {
         _modeKeyboardMouse = new RadioButton()
-            .Content("Keyboard/Mouse")
+            .Content(Strings.GeneralModeKeyboardMouse)
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.KeyboardMouse)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
 
         _modeMonitorSleep = new RadioButton()
-            .Content("Monitor Sleep")
+            .Content(Strings.GeneralModeMonitorSleep)
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.MonitorSleep)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
 
         _modeBoth = new RadioButton()
-            .Content("Both")
+            .Content(Strings.GeneralModeBoth)
             .GroupName("DetectionMode")
             .IsChecked(_config.Mode == DetectionMode.Both)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
 
         _idleTimeoutTextBox = StyleInput(
             new TextBox()
                 .Text(_config.IdleTimeoutMinutes.ToString())
                 .Width(120)
-                .Placeholder("Minutes")
+                .Placeholder(Strings.GeneralIdleTimeoutPlaceholder)
         );
 
         var planNames = new List<string>();
@@ -226,47 +233,46 @@ internal sealed class SettingsWindow
 
         _defaultPlanComboBox = StyleInput(
             new ComboBox()
-                .Items(new[] { "None" }.Concat(planNames).ToArray())
+                .Items(new[] { Strings.GeneralNoneOption }.Concat(planNames).ToArray())
                 .SelectedIndex(GetOptionalPlanIndex(planGuids, _config.DefaultPlanGuid))
                 .MinWidth(280)
         );
 
         _autoStartCheckBox = new CheckBox()
-            .Content("Start AutoPower when Windows starts")
+            .Content(Strings.GeneralAutoStart)
             .IsChecked(_config.AutoStartEnabled)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
-
+            .FontFamily("Microsoft YaHei");
         return new StackPanel()
             .Vertical()
             .Spacing(12)
             .Padding(8)
             .Children(
                 CreateSectionCard(
-                    "Detection Strategy",
-                    "Select which runtime detectors are available to rule conditions and fallback.",
+                    Strings.GeneralDetectionStrategy,
+                    Strings.GeneralDetectionStrategyDesc,
                     _modeKeyboardMouse,
                     _modeMonitorSleep,
                     _modeBoth
                 ),
                 CreateSectionCard(
-                    "Power Transition",
-                    "Tune idle threshold and map plans for rule default and final fallback.",
+                    Strings.GeneralPowerTransition,
+                    Strings.GeneralPowerTransitionDesc,
                     new StackPanel()
                         .Horizontal()
                         .Spacing(8)
                         .Children(
-                            CreateFieldLabel("Idle timeout (minutes)").MinWidth(170),
+                            CreateFieldLabel(Strings.GeneralIdleTimeoutLabel).MinWidth(170),
                             _idleTimeoutTextBox
                         ),
                     CreateDivider(),
-                    CreateFieldBlock("Default plan", _defaultPlanComboBox),
-                    CreateFieldBlock("Active fallback plan", _activePlanComboBox),
-                    CreateFieldBlock("Idle fallback plan", _idlePlanComboBox)
+                    CreateFieldBlock(Strings.GeneralDefaultPlan, _defaultPlanComboBox),
+                    CreateFieldBlock(Strings.GeneralActiveFallbackPlan, _activePlanComboBox),
+                    CreateFieldBlock(Strings.GeneralIdleFallbackPlan, _idlePlanComboBox)
                 ),
                 CreateSectionCard(
-                    "Startup",
-                    "Control integration with Windows startup.",
+                    Strings.GeneralStartup,
+                    Strings.GeneralStartupDesc,
                     _autoStartCheckBox
                 )
             );
@@ -274,17 +280,109 @@ internal sealed class SettingsWindow
 
     #endregion
 
+    #region Interface Tab
+
+    private static readonly string[] LanguageCodes = { "", "en", "zh-Hans", "zh-Hant" };
+    private static readonly string[] ThemeCodes = { "", "Light", "Dark" };
+
+    private Element CreateInterfaceTabContent()
+    {
+        // Language
+        var langIndex = Array.IndexOf(LanguageCodes, _config.Language ?? "");
+        _languageComboBox = StyleInput(
+            new ComboBox()
+                .Items(new[]
+                {
+                    Strings.LanguageSystemDefault,
+                    Strings.LanguageEnglish,
+                    Strings.LanguageChineseSimplified,
+                    Strings.LanguageChineseTraditional,
+                })
+                .SelectedIndex(langIndex >= 0 ? langIndex : 0)
+                .MinWidth(200)
+        );
+
+        // Theme
+        var themeIndex = Array.IndexOf(ThemeCodes, _config.Theme ?? "");
+        _themeComboBox = StyleInput(
+            new ComboBox()
+                .Items(new[]
+                {
+                    Strings.InterfaceThemeSystem,
+                    Strings.InterfaceThemeLight,
+                    Strings.InterfaceThemeDark,
+                })
+                .SelectedIndex(themeIndex >= 0 ? themeIndex : 0)
+                .MinWidth(200)
+        );
+
+        // Scale
+        var scale = _config.ScalePercent ?? 100;
+        _scaleLabel = new Label()
+            .Text(Strings.InterfaceScalePercent(scale))
+            .Foreground(TextPrimary)
+            .FontFamily("Microsoft YaHei")
+            .MinWidth(48);
+
+        _scaleSlider = new Slider()
+            .Minimum(75)
+            .Maximum(200)
+            .SmallChange(5)
+            .Value(scale)
+            .OnValueChanged(v =>
+            {
+                _scaleLabel?.Text(Strings.InterfaceScalePercent((int)v));
+            });
+
+        return new StackPanel()
+            .Vertical()
+            .Spacing(12)
+            .Padding(8)
+            .Children(
+                CreateSectionCard(
+                    Strings.LanguageLabel,
+                    Strings.LanguageDesc,
+                    _languageComboBox
+                ),
+                CreateSectionCard(
+                    Strings.InterfaceThemeLabel,
+                    Strings.InterfaceThemeDesc,
+                    _themeComboBox
+                ),
+                CreateSectionCard(
+                    Strings.InterfaceScaleLabel,
+                    Strings.InterfaceScaleDesc,
+                    new StackPanel()
+                        .Horizontal()
+                        .Spacing(12)
+                        .Children(_scaleSlider, _scaleLabel)
+                )
+            );
+    }
+
+    #endregion
+
+
     #region Schedule Tab
 
     private Element CreateScheduleTabContent()
     {
         _decisionTreeEditor = new DecisionTreeEditor();
+        _decisionTreeEditor.SetAvailablePlans(_plans);
         _decisionTreeEditor.LoadTree(_config.DecisionTree);
-        _decisionTreeEditor.TreeChanged += RefreshPreviewTab;
+        _decisionTreeEditor.TreeChanged += () =>
+        {
+            RefreshPreviewTab();
+            if (_rulesSummaryLabel != null)
+            {
+                var count = CountNodes(_decisionTreeEditor.ViewModel.Root.Value);
+                _rulesSummaryLabel.Text(count == 1 ? Strings.ScheduleNodeConfiguredSingular : Strings.ScheduleNodeConfigured(count));
+            }
+        };
 
         _rulesSummaryLabel = new Label()
             .Text(FormatDecisionTreeSummary())
-            .FontFamily("Consolas")
+            .FontFamily("Microsoft YaHei")
             .FontSize(11)
             .Foreground(TextMuted);
 
@@ -294,8 +392,8 @@ internal sealed class SettingsWindow
             .Padding(8)
             .Children(
                 CreateSectionCard(
-                    "Decision Tree Strategy",
-                    "IF-THEN-ELSE decision tree for power plan selection. Each node evaluates a condition group and branches accordingly.",
+                    Strings.ScheduleDecisionTreeStrategy,
+                    Strings.ScheduleDecisionTreeDesc,
                     _rulesSummaryLabel,
                     _decisionTreeEditor
                 )
@@ -305,7 +403,7 @@ internal sealed class SettingsWindow
     private string FormatDecisionTreeSummary()
     {
         var nodeCount = CountNodes(_config.DecisionTree);
-        return nodeCount == 1 ? "1 node configured" : $"{nodeCount} nodes configured";
+        return nodeCount == 1 ? Strings.ScheduleNodeConfiguredSingular : Strings.ScheduleNodeConfigured(nodeCount);
     }
 
     private static int CountNodes(StrategyDecisionNode? node)
@@ -332,11 +430,11 @@ internal sealed class SettingsWindow
     {
         _overrideStatusLabel = new Label().Text(
             _config.Override.IsActive
-                ? $"Override Active (Expires: {_config.Override.ExpiresAt:g})"
-                : "No Override Active"
+                ? Strings.OverrideOverrideActive(_config.Override.ExpiresAt?.ToLocalTime().ToString("g") ?? "")
+                : Strings.OverrideNoOverrideActive
         );
         _overrideStatusLabel
-            .FontFamily("Consolas")
+            .FontFamily("Microsoft YaHei")
             .Foreground(_config.Override.IsActive ? AccentColor : TextMuted)
             .FontSize(12);
 
@@ -351,12 +449,12 @@ internal sealed class SettingsWindow
         );
 
         _overrideTtlTextBox = StyleInput(
-            new TextBox().Text("60").Width(120).Placeholder("Minutes")
+            new TextBox().Text("60").Width(120).Placeholder(Strings.OverrideDurationPlaceholder)
         );
 
-        var setOverrideButton = CreatePrimaryButton("Set Override", OnSetOverrideClicked)
+        var setOverrideButton = CreatePrimaryButton(Strings.OverrideSetOverride, OnSetOverrideClicked)
             .Width(120);
-        var clearOverrideButton = CreateDangerButton("Clear Override", OnClearOverrideClicked)
+        var clearOverrideButton = CreateDangerButton(Strings.OverrideClearOverride, OnClearOverrideClicked)
             .Width(120);
 
         return new StackPanel()
@@ -365,16 +463,16 @@ internal sealed class SettingsWindow
             .Padding(8)
             .Children(
                 CreateSectionCard(
-                    "Manual Override",
-                    "Force a temporary plan regardless of automatic strategy.",
+                    Strings.OverrideManualOverride,
+                    Strings.OverrideManualOverrideDesc,
                     _overrideStatusLabel,
                     CreateDivider(),
-                    CreateFieldBlock("Override plan", _overridePlanComboBox),
+                    CreateFieldBlock(Strings.OverrideOverridePlan, _overridePlanComboBox),
                     new StackPanel()
                         .Horizontal()
                         .Spacing(8)
                         .Children(
-                            CreateFieldLabel("Duration (minutes)").MinWidth(170),
+                            CreateFieldLabel(Strings.OverrideDurationLabel).MinWidth(170),
                             _overrideTtlTextBox
                         ),
                     new StackPanel()
@@ -404,27 +502,27 @@ internal sealed class SettingsWindow
                 };
 
                 _overrideStatusLabel?.Text(
-                    $"Override Active (Expires: {_config.Override.ExpiresAt?.ToLocalTime():g})"
+                    Strings.OverrideOverrideActive(_config.Override.ExpiresAt?.ToLocalTime().ToString("g") ?? "")
                 );
                 _overrideStatusLabel?.Foreground(AccentColor);
                 OnConfigSaved?.Invoke(_config);
                 OnNotificationRequested?.Invoke(
-                    "Override Active",
-                    $"Forced '{selectedPlan.Name}' for {ttlMinutes} minutes"
+                    Strings.OverrideNotificationOverrideActive,
+                    Strings.OverrideNotificationForced(selectedPlan.Name, ttlMinutes)
                 );
                 RefreshPreviewTab();
             }
             else
             {
                 OnNotificationRequested?.Invoke(
-                    "Failed to Set Override",
-                    "Invalid duration entered."
+                    Strings.OverrideNotificationFailed,
+                    Strings.OverrideNotificationInvalidDuration
                 );
             }
         }
         else
         {
-            OnNotificationRequested?.Invoke("Failed to Set Override", "No plan selected.");
+            OnNotificationRequested?.Invoke(Strings.OverrideNotificationFailed, Strings.OverrideNotificationNoPlan);
         }
     }
 
@@ -432,10 +530,10 @@ internal sealed class SettingsWindow
     {
         _config = BuildConfigFromEditors() with { Override = new() };
 
-        _overrideStatusLabel?.Text("No Override Active");
+        _overrideStatusLabel?.Text(Strings.OverrideNoOverrideActive);
         _overrideStatusLabel?.Foreground(TextMuted);
         OnConfigSaved?.Invoke(_config);
-        OnNotificationRequested?.Invoke("Override Cleared", "Resumed automatic plan management.");
+        OnNotificationRequested?.Invoke(Strings.OverrideNotificationCleared, Strings.OverrideNotificationResumed);
         RefreshPreviewTab();
     }
 
@@ -446,15 +544,15 @@ internal sealed class SettingsWindow
     private Element CreatePreviewTabContent()
     {
         _previewKeyboardMouseIdleCheckBox = new CheckBox()
-            .Content("Assume keyboard/mouse is idle")
+            .Content(Strings.PreviewAssumeKeyboardMouseIdle)
             .IsChecked(false)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
         _previewMonitorOffCheckBox = new CheckBox()
-            .Content("Assume monitor is off")
+            .Content(Strings.PreviewAssumeMonitorOff)
             .IsChecked(false)
             .Foreground(TextPrimary)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
 
         _previewScrollViewer = new ScrollViewer()
             .Height(380)
@@ -472,8 +570,8 @@ internal sealed class SettingsWindow
             .Padding(8)
             .Children(
                 CreateSectionCard(
-                    "Timeline Preview",
-                    "Preview uses the selected detector snapshot below. Detector-based rules are runtime-dependent and not future-guaranteed.",
+                    Strings.PreviewTimelinePreview,
+                    Strings.PreviewTimelinePreviewDesc,
                     new StackPanel()
                         .Horizontal()
                         .Spacing(8)
@@ -507,8 +605,8 @@ internal sealed class SettingsWindow
                     .Padding(14)
                     .Child(
                         new Label()
-                            .Text("No upcoming plan transitions in the next 24 hours.")
-                            .FontFamily("Consolas")
+                            .Text(Strings.PreviewNoTransitions)
+                            .FontFamily("Microsoft YaHei")
                             .Foreground(TextMuted)
                     )
             );
@@ -529,7 +627,7 @@ internal sealed class SettingsWindow
                 }
                 else
                 {
-                    durationText = "until end of preview";
+                    durationText = Strings.PreviewUntilEndOfPreview;
                 }
 
                 var timeText = entry.Time.ToString("ddd HH:mm");
@@ -552,27 +650,27 @@ internal sealed class SettingsWindow
 
                 var timeLabel = new Label()
                     .Text(timeText)
-                    .FontFamily("Consolas")
+                    .FontFamily("Microsoft YaHei")
                     .FontSize(12)
                     .Foreground(isFirst ? AccentColor : TextPrimary)
                     .MinWidth(100);
 
                 var planLabel = new Label()
                     .Text(entry.PlanName)
-                    .FontFamily("Bahnschrift")
+                    .FontFamily("Microsoft YaHei")
                     .FontSize(13)
                     .SemiBold()
                     .Foreground(TextPrimary);
 
                 var sourceLabel = new Label()
                     .Text(entry.Source)
-                    .FontFamily("Consolas")
+                    .FontFamily("Microsoft YaHei")
                     .FontSize(10)
                     .Foreground(TextMuted);
 
                 var durationLabel = new Label()
                     .Text(durationText)
-                    .FontFamily("Consolas")
+                    .FontFamily("Microsoft YaHei")
                     .FontSize(10)
                     .Foreground(TextMuted);
 
@@ -618,18 +716,18 @@ internal sealed class SettingsWindow
     private static string FormatDuration(TimeSpan span)
     {
         if (span.TotalMinutes < 1)
-            return "< 1 min";
+            return Strings.DurationLessThanOneMin;
         if (span.TotalHours < 1)
-            return $"{(int)span.TotalMinutes} min";
+            return Strings.DurationMinutes((int)span.TotalMinutes);
         if (span.TotalHours < 24)
         {
             var h = (int)span.TotalHours;
             var m = span.Minutes;
-            return m > 0 ? $"{h}h {m}m" : $"{h}h";
+            return m > 0 ? Strings.DurationHoursMinutes(h, m) : Strings.DurationHours(h);
         }
         var d = (int)span.TotalDays;
         var hr = span.Hours;
-        return hr > 0 ? $"{d}d {hr}h" : $"{d}d";
+        return hr > 0 ? Strings.DurationDaysHours(d, hr) : Strings.DurationDays(d);
     }
 
     #endregion
@@ -653,10 +751,10 @@ internal sealed class SettingsWindow
                     .Center()
                     .Children(
                         new Label()
-                            .Text("AutoPower")
+                            .Text(Strings.AppTitle)
                             .FontSize(30)
                             .Bold()
-                            .FontFamily("Bahnschrift")
+                            .FontFamily("Microsoft YaHei")
                             .Foreground(TextPrimary),
                         new Border()
                             .Background(SurfaceInput)
@@ -666,26 +764,26 @@ internal sealed class SettingsWindow
                             .Padding(12, 5)
                             .Child(
                                 new Label()
-                                    .Text($"Version {version}")
-                                    .FontFamily("Consolas")
+                                    .Text(Strings.AboutVersion(version))
+                                    .FontFamily("Microsoft YaHei")
                                     .Foreground(AccentColor)
                             ),
                         CreateDivider(),
                         new Label()
-                            .Text("Automatic power plan management for Windows")
+                            .Text(Strings.AboutDescription)
                             .FontSize(13)
                             .Foreground(TextPrimary)
-                            .FontFamily("Bahnschrift"),
+                            .FontFamily("Microsoft YaHei"),
                         new Label()
                             .Text(
-                                "Smartly switches plans based on idle detection and schedule rules."
+                                Strings.AboutTagline
                             )
-                            .FontFamily("Consolas")
+                            .FontFamily("Microsoft YaHei")
                             .FontSize(11)
                             .Foreground(TextMuted),
                         new Label()
-                            .Text("Built with Aprillz.MewUI")
-                            .FontFamily("Consolas")
+                            .Text(Strings.AboutBuiltWith)
+                            .FontFamily("Microsoft YaHei")
                             .FontSize(11)
                             .Foreground(TextMuted)
                     )
@@ -704,9 +802,9 @@ internal sealed class SettingsWindow
                 .Text(title)
                 .FontSize(15)
                 .SemiBold()
-                .FontFamily("Bahnschrift")
+                .FontFamily("Microsoft YaHei")
                 .Foreground(TextPrimary),
-            new Label().Text(subtitle).FontSize(11).FontFamily("Consolas").Foreground(TextMuted),
+            new Label().Text(subtitle).FontSize(11).FontFamily("Microsoft YaHei").Foreground(TextMuted),
             CreateDivider(),
         };
 
@@ -748,7 +846,7 @@ internal sealed class SettingsWindow
             .Text(text)
             .FontSize(11)
             .SemiBold()
-            .FontFamily("Consolas")
+            .FontFamily("Microsoft YaHei")
             .Foreground(TextMuted);
     }
 
@@ -770,7 +868,7 @@ internal sealed class SettingsWindow
             .Foreground(TextPrimary)
             .BorderBrush(BorderColor)
             .BorderThickness(1)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
     }
 
     private static T StyleCompactInput<T>(T control)
@@ -783,7 +881,7 @@ internal sealed class SettingsWindow
             .Foreground(TextPrimary)
             .BorderBrush(BorderColor)
             .BorderThickness(1)
-            .FontFamily("Consolas");
+            .FontFamily("Microsoft YaHei");
     }
 
     private static Button CreatePrimaryButton(string text, Action onClick)
@@ -797,7 +895,7 @@ internal sealed class SettingsWindow
             .Foreground(Color.White)
             .BorderBrush(AccentColor)
             .BorderThickness(1)
-            .FontFamily("Bahnschrift")
+            .FontFamily("Microsoft YaHei")
             .SemiBold();
     }
 
@@ -812,7 +910,7 @@ internal sealed class SettingsWindow
             .Foreground(Color.White)
             .BorderBrush(AccentColor)
             .BorderThickness(1)
-            .FontFamily("Bahnschrift")
+            .FontFamily("Microsoft YaHei")
             .FontSize(11)
             .SemiBold();
     }
@@ -828,7 +926,7 @@ internal sealed class SettingsWindow
             .Foreground(DangerColor)
             .BorderBrush(DangerColor)
             .BorderThickness(1)
-            .FontFamily("Bahnschrift")
+            .FontFamily("Microsoft YaHei")
             .SemiBold();
     }
 
@@ -843,7 +941,7 @@ internal sealed class SettingsWindow
             .Foreground(DangerColor)
             .BorderBrush(DangerColor)
             .BorderThickness(1)
-            .FontFamily("Bahnschrift")
+            .FontFamily("Microsoft YaHei")
             .FontSize(11)
             .SemiBold();
     }
@@ -907,8 +1005,19 @@ internal sealed class SettingsWindow
         if (idleIndex >= 0 && idleIndex < _plans.Count)
             idlePlanGuid = _plans[idleIndex].Guid;
 
+        var langIdx = _languageComboBox?.SelectedIndex ?? 0;
+        var lang = langIdx >= 0 && langIdx < LanguageCodes.Length ? LanguageCodes[langIdx] : "";
+
+        var themeIdx = _themeComboBox?.SelectedIndex ?? 0;
+        var theme = themeIdx >= 0 && themeIdx < ThemeCodes.Length ? ThemeCodes[themeIdx] : "";
+
+        var scale = (int)(_scaleSlider?.Value ?? 100);
+
         return _config with
         {
+            Language = string.IsNullOrEmpty(lang) ? null : lang,
+            Theme = string.IsNullOrEmpty(theme) ? null : theme,
+            ScalePercent = scale == 100 ? null : scale,
             Mode = mode,
             IdleTimeoutMinutes = idleTimeout,
             ActivePlanGuid = activePlanGuid,
@@ -936,8 +1045,19 @@ internal sealed class SettingsWindow
     private void OnSaveClicked()
     {
         var updatedConfig = BuildConfigFromEditors();
+        var oldScale = _config.ScalePercent ?? 100;
+        var newScale = updatedConfig.ScalePercent ?? 100;
+
         OnConfigSaved?.Invoke(updatedConfig);
         _window?.Close();
+
+        if (oldScale != newScale)
+        {
+            OnNotificationRequested?.Invoke(
+                Strings.InterfaceScaleLabel,
+                Strings.InterfaceScaleRestartNotice
+            );
+        }
     }
 
 

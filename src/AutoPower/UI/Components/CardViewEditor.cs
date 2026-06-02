@@ -15,6 +15,7 @@ namespace AutoPower.UI.Components;
 public sealed class CardViewEditor : UserControl
 {
     private readonly DecisionTreeViewModel _vm;
+    private List<PowerPlanInfo> _availablePlans = new();
 
     // Colors matching SettingsWindow theme
     private static readonly Color SurfaceCard = Color.FromHex("#1C2333");
@@ -26,6 +27,7 @@ public sealed class CardViewEditor : UserControl
     private static readonly Color ThenColor = Color.FromHex("#4CAF50"); // Green for THEN branch
     private static readonly Color ElseColor = Color.FromHex("#FF9800"); // Orange for ELSE branch
     private static readonly Color DangerColor = Color.FromHex("#D85A76");
+    private static readonly Color DisabledBackground = Color.FromRgb(0x14, 0x1A, 0x28);
 
     // Theme-based metrics (avoiding hardcoded values)
     private const double CardSpacing = 8.0;
@@ -56,9 +58,17 @@ public sealed class CardViewEditor : UserControl
     // Track expansion state for each node
     private readonly Dictionary<Guid, bool> _expandedStates = new();
 
+    // Cache condition editors by node ID to preserve state across rebuilds
+    private readonly Dictionary<Guid, ConditionGroupEditor> _conditionEditors = new();
+
     public CardViewEditor(DecisionTreeViewModel vm)
     {
         _vm = vm;
+        _vm.Root.Subscribe(() =>
+        {
+            CleanupConditionEditors(_vm.Root.Value);
+            Rebuild();
+        });
         Build();
     }
 
@@ -67,9 +77,7 @@ public sealed class CardViewEditor : UserControl
     /// </summary>
     public void LoadTree(StrategyDecisionNode? root)
     {
-        _vm.LoadTree(root);
-        _expandedStates.Clear();
-        Rebuild();
+        // Rebuild is handled automatically by the Root subscription
     }
 
     /// <summary>
@@ -79,7 +87,44 @@ public sealed class CardViewEditor : UserControl
     {
         _vm.ClearTree();
         _expandedStates.Clear();
+        _conditionEditors.Clear();
         Rebuild();
+    }
+
+    public void SetAvailablePlans(List<PowerPlanInfo> plans)
+    {
+        _availablePlans = plans;
+        Rebuild();
+    }
+
+    /// <summary>
+    /// Cleans up cached condition editors for nodes no longer in the tree.
+    /// </summary>
+    private void CleanupConditionEditors(StrategyDecisionNode? root)
+    {
+        if (root == null)
+        {
+            _conditionEditors.Clear();
+            return;
+        }
+
+        var validIfNodeIds = new HashSet<Guid>();
+        CollectIfNodeIds(root, validIfNodeIds);
+
+        foreach (var key in _conditionEditors.Keys.Where(k => !validIfNodeIds.Contains(k)).ToList())
+        {
+            _conditionEditors.Remove(key);
+        }
+    }
+
+    private static void CollectIfNodeIds(StrategyDecisionNode node, HashSet<Guid> ids)
+    {
+        if (node.If != null)
+        {
+            ids.Add(node.Id);
+        }
+        if (node.Then != null) CollectIfNodeIds(node.Then, ids);
+        if (node.Else != null) CollectIfNodeIds(node.Else, ids);
     }
 
     protected override Element? OnBuild()
@@ -238,7 +283,7 @@ public sealed class CardViewEditor : UserControl
 
         // Create collapsible card container
         var card = new Border()
-            .Background(depth == 0 ? SurfaceCard : SurfaceInput)
+            .Background(node.IsEnabled ? (depth == 0 ? SurfaceCard : SurfaceInput) : DisabledBackground)
             .BorderBrush(GetDepthBorderColor(depth))
             .BorderThickness(1)
             .CornerRadius(8)
@@ -280,6 +325,19 @@ public sealed class CardViewEditor : UserControl
                     .FontSize(10)
                     .Foreground(TextMuted)
                     .VerticalAlignment(VerticalAlignment.Center),
+                // Enable/disable toggle
+                new CheckBox()
+                    .IsChecked(node.IsEnabled)
+                    .VerticalAlignment(VerticalAlignment.Center)
+                    .OnCheckedChanged(isChecked =>
+                    {
+                        var root = _vm.Root.Value;
+                        if (root == null) return;
+                        var updated = DecisionTreeMutation.SetIsEnabled(root, node.Id, isChecked, out var changed);
+                        if (!changed) return;
+                        _vm.UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }),
                 // Node type indicator
                 new Border()
                     .Background(GetNodeTypeColor(node))
@@ -299,7 +357,7 @@ public sealed class CardViewEditor : UserControl
                         .Text($"IF {conditionSummary}")
                         .FontFamily("Consolas")
                         .FontSize(11)
-                        .Foreground(TextPrimary)
+                        .Foreground(node.IsEnabled ? TextPrimary : TextMuted)
                         .VerticalAlignment(VerticalAlignment.Center)
                     : new Label().Text("")
             );
@@ -332,13 +390,29 @@ public sealed class CardViewEditor : UserControl
     private Element BuildCardContent(StrategyDecisionNode node, int depth, List<string> pathLabels)
     {
         var children = new List<Element>();
+        var isLeaf = node.Then == null && node.Else == null;
 
         // Condition editor if this is an IF node
         if (node.If != null)
         {
-            var conditionEditor = new ConditionGroupEditor();
+            if (!_conditionEditors.TryGetValue(node.Id, out var conditionEditor))
+            {
+                conditionEditor = new ConditionGroupEditor();
+                conditionEditor.GroupChanged += () =>
+                {
+                    var root = _vm.Root.Value;
+                    if (root == null) return;
+                    var updatedGroup = conditionEditor.GetGroup();
+                    var updated = DecisionTreeMutation.SetIf(root, node.Id, updatedGroup, out var changed);
+                    if (changed)
+                    {
+                        _vm.UpdateTree(updated);
+                        TreeChanged?.Invoke();
+                    }
+                };
+                _conditionEditors[node.Id] = conditionEditor;
+            }
             conditionEditor.LoadGroup(node.If, isRoot: true);
-            conditionEditor.GroupChanged += () => TreeChanged?.Invoke();
 
             children.Add(new Border().Margin(8, 8, 8, 0).Child(conditionEditor));
         }
@@ -355,9 +429,42 @@ public sealed class CardViewEditor : UserControl
             children.Add(BuildBranchCard(node.Else, "ELSE", ElseColor, depth + 1, pathLabels));
         }
 
-        // Empty state for leaf nodes
-        if (node.Then == null && node.Else == null && !node.PlanGuid.HasValue)
+        if (isLeaf)
         {
+            var details = new StackPanel().Vertical().Spacing(8);
+            var planRow = new StackPanel().Horizontal().Spacing(8);
+            var planLabel = new Label()
+                .Text("Power Plan")
+                .FontSize(11)
+                .Foreground(TextMuted);
+            var planComboBox = new ComboBox();
+            var planNames = _availablePlans.Select(p => p.Name).ToArray();
+            planComboBox.Items(planNames);
+            var selectedIndex = _availablePlans.FindIndex(p => p.Guid == node.PlanGuid);
+            if (selectedIndex >= 0)
+            {
+                planComboBox.SelectedIndex(selectedIndex);
+            }
+
+            planComboBox.SelectionChanged += _ =>
+            {
+                var idx = planComboBox.SelectedIndex;
+                if (idx >= 0 && idx < _availablePlans.Count)
+                {
+                    bool changed;
+                    var updatedRoot = DecisionTreeMutation.SetPlanGuid(
+                        _vm.Root.Value!, node.Id, _availablePlans[idx].Guid, out changed);
+                    if (changed)
+                    {
+                        _vm.UpdateTree(updatedRoot);
+                        TreeChanged?.Invoke();
+                    }
+                }
+            };
+
+            planRow.Children(planLabel, planComboBox);
+            details.Children(planRow);
+
             children.Add(
                 new Border()
                     .Margin(8)
@@ -366,13 +473,7 @@ public sealed class CardViewEditor : UserControl
                     .BorderBrush(BorderColor)
                     .BorderThickness(1)
                     .CornerRadius(6)
-                    .Child(
-                        new Label()
-                            .Text("Leaf node: Add a branch or assign a power plan")
-                            .FontFamily("Consolas")
-                            .FontSize(10)
-                            .Foreground(TextMuted)
-                    )
+                    .Child(details)
             );
         }
 
@@ -461,11 +562,12 @@ public sealed class CardViewEditor : UserControl
     /// <summary>
     /// Gets the node type label for display.
     /// </summary>
-    private static string GetNodeTypeLabel(StrategyDecisionNode node)
+    private string GetNodeTypeLabel(StrategyDecisionNode node)
     {
         if (node.PlanGuid.HasValue)
         {
-            return $"PLAN: {node.PlanGuid.Value.ToString()[..8]}...";
+            var plan = _availablePlans.FirstOrDefault(p => p.Guid == node.PlanGuid);
+            return plan != null ? $"PLAN: {plan.Name}" : $"PLAN: {node.PlanGuid.Value.ToString()[..8]}...";
         }
 
         if (node.If != null)
@@ -634,7 +736,7 @@ public sealed class CardViewEditor : UserControl
             return;
         }
 
-        _vm.LoadTree(updatedRoot);
+        _vm.UpdateTree(updatedRoot);
         var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Then;
         _vm.SelectNode(selected);
         Rebuild();
@@ -667,7 +769,7 @@ public sealed class CardViewEditor : UserControl
             return;
         }
 
-        _vm.LoadTree(updatedRoot);
+        _vm.UpdateTree(updatedRoot);
         var selected = DecisionTreeMutation.FindNodeById(updatedRoot, parent.Id)?.Else;
         _vm.SelectNode(selected);
         Rebuild();
@@ -691,8 +793,9 @@ public sealed class CardViewEditor : UserControl
             return;
         }
 
-        _vm.LoadTree(updatedRoot);
+        _vm.UpdateTree(updatedRoot);
         _vm.SelectNode(null);
+        CleanupConditionEditors(updatedRoot);
         Rebuild();
         TreeChanged?.Invoke();
     }
@@ -703,7 +806,6 @@ public sealed class CardViewEditor : UserControl
     private void SelectNode(StrategyDecisionNode node)
     {
         _vm.SelectNode(node);
-        Rebuild();
         NodeSelected?.Invoke(node);
 
         // Update breadcrumb

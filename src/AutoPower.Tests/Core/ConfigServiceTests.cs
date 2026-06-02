@@ -28,7 +28,7 @@ public class ConfigServiceTests : IDisposable
         {
             var result = ConfigService.Load();
 
-            Assert.Equal(3, result.SchemaVersion);
+            Assert.Equal(5, result.SchemaVersion);
             Assert.Equal(5, result.IdleTimeoutMinutes);
             Assert.Equal(DetectionMode.Both, result.Mode);
             Assert.Null(result.DefaultPlanGuid);
@@ -52,7 +52,7 @@ public class ConfigServiceTests : IDisposable
             var defaultPlanGuid = Guid.NewGuid();
             var config = new AppConfig
             {
-                SchemaVersion = 3,
+                SchemaVersion = 5,
                 Mode = DetectionMode.KeyboardMouse,
                 IdleTimeoutMinutes = 15,
                 ActivePlanGuid = Guid.NewGuid(),
@@ -197,7 +197,7 @@ public class ConfigServiceTests : IDisposable
 
             var config = ConfigService.Load();
 
-            Assert.Equal(3, config.SchemaVersion);
+            Assert.Equal(5, config.SchemaVersion);
             Assert.Null(config.DecisionTree);
             Assert.Null(config.DefaultPlanGuid);
         }
@@ -225,7 +225,7 @@ public class ConfigServiceTests : IDisposable
             ConfigService.Save(config2);
 
             var loaded = ConfigService.Load();
-            Assert.Equal(3, loaded.SchemaVersion);
+            Assert.Equal(5, loaded.SchemaVersion);
             Assert.Equal(30, loaded.IdleTimeoutMinutes);
         }
         finally

@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using AutoPower.Core.Core.Models;
 using AutoPower.Core.Infrastructure;
+using AutoPower.Core.Localization;
 using AutoPower.Core.Infrastructure.Win32;
 using AutoPower.Infrastructure.Win32;
 using Kernel32 = AutoPower.Core.Infrastructure.Win32.Kernel32;
@@ -228,10 +229,10 @@ internal sealed class TrayIcon : IDisposable
         {
             var statusText = _currentState switch
             {
-                AppState.Active => "Status: Active",
-                AppState.Idle => "Status: Idle",
-                AppState.ManualOverride => "Status: Override",
-                _ => "Status: Unknown",
+                AppState.Active => Strings.TrayStatusActive,
+                AppState.Idle => Strings.TrayStatusIdle,
+                AppState.ManualOverride => Strings.TrayStatusOverride,
+                _ => Strings.TrayStatusUnknown,
             };
 
             User32.AppendMenuW(
@@ -243,7 +244,7 @@ internal sealed class TrayIcon : IDisposable
 
             User32.AppendMenuW(menu, User32.MF_SEPARATOR, 0, string.Empty);
 
-            User32.AppendMenuW(menu, User32.MF_STRING, (nuint)CmdSettings, "Settings...");
+            User32.AppendMenuW(menu, User32.MF_STRING, (nuint)CmdSettings, Strings.TraySettings);
 
             User32.AppendMenuW(menu, User32.MF_SEPARATOR, 0, string.Empty);
 
@@ -253,7 +254,7 @@ internal sealed class TrayIcon : IDisposable
                     menu,
                     User32.MF_STRING,
                     (nuint)CmdClearOverride,
-                    "Clear Override"
+                    Strings.TrayClearOverride
                 );
             }
             else
@@ -262,13 +263,13 @@ internal sealed class TrayIcon : IDisposable
                     menu,
                     User32.MF_STRING | User32.MF_GRAYED,
                     (nuint)CmdClearOverride,
-                    "Clear Override"
+                    Strings.TrayClearOverride
                 );
             }
 
             User32.AppendMenuW(menu, User32.MF_SEPARATOR, 0, string.Empty);
 
-            User32.AppendMenuW(menu, User32.MF_STRING, (nuint)CmdExit, "Exit");
+            User32.AppendMenuW(menu, User32.MF_STRING, (nuint)CmdExit, Strings.TrayExit);
 
             User32.GetCursorPos(out var pt);
 

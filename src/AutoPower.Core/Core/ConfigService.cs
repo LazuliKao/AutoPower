@@ -6,7 +6,7 @@ namespace AutoPower.Core.Core;
 
 internal static class ConfigService
 {
-     private const int CurrentSchemaVersion = 3;
+     private const int CurrentSchemaVersion = 5;
 
     internal static string ConfigFilePath { get; } =
         Path.Combine(AppContext.BaseDirectory, "data", "config.json");
